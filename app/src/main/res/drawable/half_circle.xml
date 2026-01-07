@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+
+    <solid android:color="@color/secondary" /> <!-- Light purple color -->
+
+    <!-- This creates a half-circle effect -->
+    <size
+        android:width="200dp"
+        android:height="200dp"/>
+</shape>
