@@ -19,14 +19,6 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        
-        val localProperties = Properties()
-        val localPropertiesFile = rootProject.file("local.properties")
-        if (localPropertiesFile.exists()) {
-            localProperties.load(FileInputStream(localPropertiesFile))
-        }
-        val hfToken = localProperties.getProperty("HF_ACCESS_TOKEN") ?: ""
-        buildConfigField("String", "HF_ACCESS_TOKEN", "\"$hfToken\"")
     }
 
     buildFeatures {

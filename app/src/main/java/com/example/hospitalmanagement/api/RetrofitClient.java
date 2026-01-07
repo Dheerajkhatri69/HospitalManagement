@@ -20,7 +20,9 @@ public class RetrofitClient {
                         okhttp3.Request original = chain.request();
                         okhttp3.Request.Builder builder = original.newBuilder()
                                 .header("Authorization",
-                                        "Bearer " + com.example.hospitalmanagement.BuildConfig.HF_ACCESS_TOKEN);
+                                        "Bearer " + com.example.hospitalmanagement.utils.Secrets.HF_ACCESS_TOKEN);
+                        android.util.Log.d("RetrofitClient",
+                                "Using Token: " + com.example.hospitalmanagement.utils.Secrets.HF_ACCESS_TOKEN);
                         okhttp3.Request request = builder.build();
                         return chain.proceed(request);
                     })
