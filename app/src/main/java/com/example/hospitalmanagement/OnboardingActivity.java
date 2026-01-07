@@ -12,7 +12,7 @@ import com.example.hospitalmanagement.model.ScreenItem;
 import java.util.ArrayList;
 import java.util.List;
 
-public class OnboardingActivity extends AppCompatActivity {
+public class OnboardingActivity extends BaseActivity {
 
     private ViewPager2 viewPager;
     private OnboardingAdapter adapter;
@@ -44,30 +44,27 @@ public class OnboardingActivity extends AppCompatActivity {
 
         // Screen 1
         screenItems.add(new ScreenItem(
-                R.drawable.welcome1,  // Replace with your image resource
+                R.drawable.welcome1, // Replace with your image resource
                 "Find Trusted Doctors",
                 "Contrary to popular belief, Pules360 is not simply random text. It has roots in a piece of it over 2000 years old.",
                 "Next",
-                false
-        ));
+                false));
 
         // Screen 2
         screenItems.add(new ScreenItem(
-                R.drawable.welcome2,  // Replace with your image resource
+                R.drawable.welcome2, // Replace with your image resource
                 "Choose Best Doctors",
                 "Contrary to popular belief, Pulse360  is not simply random text. It has roots in a piece of it over 2000 years old.",
                 "Next",
-                false
-        ));
+                false));
 
         // Screen 3 (Last screen)
         screenItems.add(new ScreenItem(
-                R.drawable.welcome3,  // Replace with your image resource
+                R.drawable.welcome3, // Replace with your image resource
                 "Easy Appointments",
                 "Contrary to popular belief, Pulse360 is not simply random text. It has roots in a piece of it over 2000 years old.",
                 "Get Started",
-                true
-        ));
+                true));
     }
 
     private void setupViewPager() {

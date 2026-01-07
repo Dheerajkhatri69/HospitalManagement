@@ -7,7 +7,7 @@ import android.os.Handler;
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
 
-public class SplashActivityTwo extends AppCompatActivity {
+public class SplashActivityTwo extends BaseActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -21,6 +21,6 @@ public class SplashActivityTwo extends AppCompatActivity {
                 startActivity(intent);
                 finish();
             }
-        },1000);
+        }, 1000);
     }
 }

@@ -14,16 +14,19 @@ import android.widget.Toast;
 import com.example.hospitalmanagement.adapter.AppointmentAdapter;
 import com.example.hospitalmanagement.model.Appointment;
 import com.example.hospitalmanagement.utils.SessionManager;
+import com.example.hospitalmanagement.api.ApiService;
+import com.example.hospitalmanagement.api.RetrofitClient;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class PatientActivity extends AppCompatActivity implements AppointmentAdapter.OnAppointmentClickListener {
+public class PatientActivity extends BaseActivity implements AppointmentAdapter.OnAppointmentClickListener {
     private RecyclerView appointmentsRecyclerView;
     private AppointmentAdapter appointmentAdapter;
     private List<Appointment> appointmentList = new ArrayList<>();
 
     private SessionManager sessionManager;
+    private ApiService apiService;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -32,6 +35,7 @@ public class PatientActivity extends AppCompatActivity implements AppointmentAda
 
         // Session Check
         sessionManager = new SessionManager(this);
+        apiService = RetrofitClient.getApiService();
         if (!sessionManager.isLoggedIn()) {
             startActivity(new android.content.Intent(this, LoginActivity.class));
             finish();
@@ -103,6 +107,11 @@ public class PatientActivity extends AppCompatActivity implements AppointmentAda
         showAllButton.setOnClickListener(v -> {
             Toast.makeText(this, "Show All Appointments", Toast.LENGTH_SHORT).show();
         });
+
+        // Setup Floating Action Button for booking
+        com.google.android.material.floatingactionbutton.FloatingActionButton fabBookAppointment = findViewById(
+                R.id.fab_book_appointment);
+        fabBookAppointment.setOnClickListener(v -> openBookingFragment());
     }
 
     private void setupQuickActions() {
@@ -121,8 +130,8 @@ public class PatientActivity extends AppCompatActivity implements AppointmentAda
         appointmentsRecyclerView = findViewById(R.id.appointments_recyclerview);
         appointmentsRecyclerView.setLayoutManager(new LinearLayoutManager(this));
 
-        // Create sample appointment data
-        createSampleAppointments();
+        // Load real appointment data from API
+        loadRealAppointments();
 
         appointmentAdapter = new AppointmentAdapter(appointmentList, this, true, this);
         appointmentsRecyclerView.setAdapter(appointmentAdapter);
@@ -130,13 +139,59 @@ public class PatientActivity extends AppCompatActivity implements AppointmentAda
         appointmentsRecyclerView.setNestedScrollingEnabled(false);
     }
 
-    private void createSampleAppointments() {
-        appointmentList.clear();
-        // Sample data for patient view (e.g. Doctor names instead of patient names)
-        appointmentList.add(new Appointment("1", "Dr. SMITH (Cardio)", "10:30 AM", "Confirmed", "Checkup", "Room 101",
-                R.drawable.ic_patient_avatar));
-        appointmentList.add(new Appointment("2", "Dr. JANE (Derma)", "11:45 AM", "Pending", "Consultation", "Room 102",
-                R.drawable.ic_patient_avatar));
+    private void loadRealAppointments() {
+        Integer patientId = sessionManager.getPatientId();
+        if (patientId == null) {
+            Toast.makeText(this, "Patient ID not found", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        apiService.getAppointmentsByPatient(patientId)
+                .enqueue(new retrofit2.Callback<List<com.example.hospitalmanagement.model.AppointmentResponse>>() {
+                    @Override
+                    public void onResponse(
+                            retrofit2.Call<List<com.example.hospitalmanagement.model.AppointmentResponse>> call,
+                            retrofit2.Response<List<com.example.hospitalmanagement.model.AppointmentResponse>> response) {
+                        if (response.isSuccessful() && response.body() != null) {
+                            appointmentList.clear();
+                            for (com.example.hospitalmanagement.model.AppointmentResponse apt : response.body()) {
+                                // Convert API response to Appointment model
+                                String doctorName = apt.getDoctorName() != null ? apt.getDoctorName() : "Doctor";
+                                String time = apt.getScheduledTime() != null ? apt.getScheduledTime() : "N/A";
+                                String status = apt.getStatus() != null ? apt.getStatus() : "Unknown";
+                                String reason = "Appointment"; // No reason field in API
+
+                                appointmentList.add(new Appointment(
+                                        String.valueOf(apt.getAppointmentId()),
+                                        doctorName,
+                                        time,
+                                        status,
+                                        reason,
+                                        "", // No room number
+                                        R.drawable.ic_patient_avatar));
+                            }
+                            appointmentAdapter.notifyDataSetChanged();
+                        } else {
+                            Toast.makeText(PatientActivity.this, "Failed to load appointments", Toast.LENGTH_SHORT)
+                                    .show();
+                        }
+                    }
+
+                    @Override
+                    public void onFailure(
+                            retrofit2.Call<List<com.example.hospitalmanagement.model.AppointmentResponse>> call,
+                            Throwable t) {
+                        Toast.makeText(PatientActivity.this, "Error: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+                    }
+                });
+    }
+
+    private void openBookingFragment() {
+        BookAppointmentFragment fragment = BookAppointmentFragment.newInstance();
+        getSupportFragmentManager().beginTransaction()
+                .add(android.R.id.content, fragment)
+                .addToBackStack("booking")
+                .commit();
     }
 
     @Override

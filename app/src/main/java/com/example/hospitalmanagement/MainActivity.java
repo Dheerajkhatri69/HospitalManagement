@@ -21,7 +21,7 @@ import com.example.hospitalmanagement.model.Appointment;
 import java.util.ArrayList;
 import java.util.List;
 
-public class MainActivity extends AppCompatActivity implements AppointmentAdapter.OnAppointmentClickListener {
+public class MainActivity extends BaseActivity implements AppointmentAdapter.OnAppointmentClickListener {
     private RecyclerView appointmentsRecyclerView;
     private AppointmentAdapter appointmentAdapter;
     private List<Appointment> appointmentList = new ArrayList<>();
@@ -145,8 +145,8 @@ public class MainActivity extends AppCompatActivity implements AppointmentAdapte
         appointmentsRecyclerView = findViewById(R.id.appointments_recyclerview);
         appointmentsRecyclerView.setLayoutManager(new LinearLayoutManager(this));
 
-        // Create sample appointment data
-        createSampleAppointments();
+        // Load real appointment data from API
+        loadRealAppointments();
 
         appointmentAdapter = new AppointmentAdapter(appointmentList, this, true, this);
         appointmentsRecyclerView.setAdapter(appointmentAdapter);
@@ -158,47 +158,53 @@ public class MainActivity extends AppCompatActivity implements AppointmentAdapte
         appointmentsRecyclerView.setNestedScrollingEnabled(false);
     }
 
-    private void createSampleAppointments() {
-        // Clear existing appointments
-        appointmentList.clear();
+    private void loadRealAppointments() {
+        Integer doctorId = sessionManager.getDoctorId();
+        if (doctorId == null) {
+            Toast.makeText(this, "Doctor ID not found", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
-        // Add sample appointments
-        appointmentList.add(new Appointment(
-                "1",
-                "John Doe",
-                "10:30 AM",
-                "Confirmed",
-                "Regular Checkup",
-                "Room 101",
-                R.drawable.ic_patient_avatar));
+        com.example.hospitalmanagement.api.ApiService apiService = com.example.hospitalmanagement.api.RetrofitClient
+                .getApiService();
 
-        appointmentList.add(new Appointment(
-                "2",
-                "Jane Smith",
-                "11:45 AM",
-                "Pending",
-                "Follow-up Visit",
-                "Room 102",
-                R.drawable.ic_patient_avatar));
+        apiService.getAppointmentsByDoctor(doctorId)
+                .enqueue(new retrofit2.Callback<List<com.example.hospitalmanagement.model.AppointmentResponse>>() {
+                    @Override
+                    public void onResponse(
+                            retrofit2.Call<List<com.example.hospitalmanagement.model.AppointmentResponse>> call,
+                            retrofit2.Response<List<com.example.hospitalmanagement.model.AppointmentResponse>> response) {
+                        if (response.isSuccessful() && response.body() != null) {
+                            appointmentList.clear();
+                            for (com.example.hospitalmanagement.model.AppointmentResponse apt : response.body()) {
+                                // Convert API response to Appointment model
+                                String patientName = apt.getPatientName() != null ? apt.getPatientName() : "Patient";
+                                String time = apt.getScheduledTime() != null ? apt.getScheduledTime() : "N/A";
+                                String status = apt.getStatus() != null ? apt.getStatus() : "Unknown";
+                                String reason = "Appointment"; // No reason field in API
 
-        appointmentList.add(new Appointment(
-                "3",
-                "Robert Johnson",
-                "02:15 PM",
-                "Confirmed",
-                "Consultation",
-                "Room 103",
-                R.drawable.ic_patient_avatar));
+                                appointmentList.add(new Appointment(
+                                        String.valueOf(apt.getAppointmentId()),
+                                        patientName,
+                                        time,
+                                        status,
+                                        reason,
+                                        "", // No room number
+                                        R.drawable.ic_patient_avatar));
+                            }
+                            appointmentAdapter.notifyDataSetChanged();
+                        } else {
+                            Toast.makeText(MainActivity.this, "Failed to load appointments", Toast.LENGTH_SHORT).show();
+                        }
+                    }
 
-        // Add more appointments (only first 3 will be shown in MainActivity)
-        appointmentList.add(new Appointment(
-                "4",
-                "Sarah Williams",
-                "03:30 PM",
-                "Cancelled",
-                "Routine Checkup",
-                "Room 104",
-                R.drawable.ic_patient_avatar));
+                    @Override
+                    public void onFailure(
+                            retrofit2.Call<List<com.example.hospitalmanagement.model.AppointmentResponse>> call,
+                            Throwable t) {
+                        Toast.makeText(MainActivity.this, "Error: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+                    }
+                });
     }
 
     @Override

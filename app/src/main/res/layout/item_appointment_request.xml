@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="8dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="3dp"
+    app:cardBackgroundColor="@color/secondary"
+    app:strokeColor="@color/primary"
+    app:strokeWidth="1dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Header with Patient Name and Status -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="12dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/patient_name"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Patient Name"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:fontFamily="@font/sofiasans"
+                    android:textColor="@color/primary" />
+
+                <TextView
+                    android:id="@+id/specialization"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Cardiology"
+                    android:textSize="14sp"
+                    android:fontFamily="@font/sofiasans"
+                    android:textColor="@color/white"
+                    android:layout_marginTop="4dp" />
+
+                <TextView
+                    android:id="@+id/doctor_name"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Dr. John Smith"
+                    android:textSize="13sp"
+                    android:fontFamily="@font/sofiasans"
+                    android:textColor="@color/primary"
+                    android:textStyle="italic"
+                    android:layout_marginTop="2dp"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <!-- Status Badge -->
+            <TextView
+                android:id="@+id/status_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="PENDING"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:fontFamily="@font/sofiasans"
+                android:textColor="@android:color/white"
+                android:background="@drawable/status_badge_pending"
+android:paddingHorizontal="12dp"
+                android:paddingVertical="6dp" />
+        </LinearLayout>
+
+        <!-- Date and Time -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="8dp">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_schedule"
+                app:tint="@color/primary"
+                android:layout_marginEnd="8dp"
+                android:contentDescription="Date" />
+
+            <TextView
+                android:id="@+id/preferred_datetime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Jan 15, 2026 - 10:00 AM"
+                android:textSize="14sp"
+                android:fontFamily="@font/sofiasans"
+                android:textColor="@color/white" />
+        </LinearLayout>
+
+        <!-- Notes (if any) -->
+        <TextView
+            android:id="@+id/notes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Routine checkup required"
+            android:textSize="13sp"
+            android:fontFamily="@font/sofiasans"
+            android:textColor="@color/white"
+            android:alpha="0.9"
+            android:layout_marginBottom="16dp"
+            android:visibility="gone" />
+
+        <!-- Action Buttons -->
+        <LinearLayout
+            android:id="@+id/action_buttons"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="end">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_reject"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Reject"
+                android:textColor="#FF5252"
+                app:strokeColor="#FF5252"
+                android:layout_marginEnd="12dp"
+                android:fontFamily="@font/sofiasans" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_approve"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Approve"
+                android:backgroundTint="#4CAF50"
+                android:textColor="@android:color/white"
+                android:fontFamily="@font/sofiasans" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

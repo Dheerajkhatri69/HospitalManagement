@@ -419,9 +419,24 @@
                     tools:listitem="@layout/item_appointment"
                     tools:itemCount="3" />
 
-            </LinearLayout>
+                </LinearLayout>
 
         </ScrollView>
+
+        <!-- Floating Action Button for Booking -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fab_book_appointment"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:layout_alignParentEnd="true"
+            android:layout_margin="24dp"
+            android:contentDescription="Book Appointment"
+            android:src="@android:drawable/ic_input_add"
+            app:tint="@android:color/white"
+            app:backgroundTint="@color/secondary"
+            app:elevation="6dp"
+            app:borderWidth="0dp" />
 
     </RelativeLayout>
 

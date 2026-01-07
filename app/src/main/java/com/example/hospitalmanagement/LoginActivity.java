@@ -8,7 +8,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 
-public class LoginActivity extends AppCompatActivity {
+public class LoginActivity extends BaseActivity {
 
     // UI Components
     private TextInputEditText emailEditText, passwordEditText;
@@ -95,12 +95,14 @@ public class LoginActivity extends AppCompatActivity {
                 if (response.isSuccessful() && response.body() != null) {
                     com.example.hospitalmanagement.model.LoginResponse loginResponse = response.body();
 
-                    // Save Session
+                    // Save Session with patient_id and doctor_id
                     sessionManager.createLoginSession(
                             loginResponse.getUserId(),
                             loginResponse.getFullName(),
                             loginResponse.getRole(),
-                            loginResponse.getEmail());
+                            loginResponse.getEmail(),
+                            loginResponse.getPatientId(),
+                            loginResponse.getDoctorId());
 
                     Toast.makeText(LoginActivity.this, "Login Successful", Toast.LENGTH_SHORT).show();
                     navigateBasedOnRole(loginResponse.getRole());

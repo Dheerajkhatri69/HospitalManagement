@@ -39,7 +39,7 @@ public class AppointmentAdapter extends RecyclerView.Adapter<AppointmentAdapter.
     }
 
     public AppointmentAdapter(List<Appointment> appointmentList, Context context,
-                              boolean limitToThree, OnAppointmentClickListener listener) {
+            boolean limitToThree, OnAppointmentClickListener listener) {
         this.appointmentList = appointmentList;
         this.context = context;
         this.limitToThree = limitToThree;
@@ -60,9 +60,8 @@ public class AppointmentAdapter extends RecyclerView.Adapter<AppointmentAdapter.
 
             // Set appointment data
             holder.patientName.setText(appointment.getPatientName());
-            holder.appointmentTime.setText("Time: " + appointment.getTime());
+            holder.appointmentTime.setText(appointment.getTime());
             holder.appointmentReason.setText(appointment.getReason());
-            holder.roomNumber.setText("Room: " + appointment.getRoomNumber());
             holder.appointmentStatus.setText(appointment.getStatus());
 
             // Set patient image (you can use Glide/Picasso for network images)
@@ -126,7 +125,6 @@ public class AppointmentAdapter extends RecyclerView.Adapter<AppointmentAdapter.
         TextView patientName;
         TextView appointmentTime;
         TextView appointmentReason;
-        TextView roomNumber;
         TextView appointmentStatus;
         ImageView arrowIcon;
 
@@ -136,7 +134,6 @@ public class AppointmentAdapter extends RecyclerView.Adapter<AppointmentAdapter.
             patientName = itemView.findViewById(R.id.patient_name);
             appointmentTime = itemView.findViewById(R.id.appointment_time);
             appointmentReason = itemView.findViewById(R.id.appointment_reason);
-            roomNumber = itemView.findViewById(R.id.room_number);
             appointmentStatus = itemView.findViewById(R.id.appointment_status);
             arrowIcon = itemView.findViewById(R.id.arrow_icon);
         }
