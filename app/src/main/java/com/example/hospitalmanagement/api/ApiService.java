@@ -19,6 +19,9 @@ public interface ApiService {
 
     @GET("users")
     Call<List<UserResponse>> getAllUsers();
+    
+    @PUT("users/{user_id}")
+    Call<MessageResponse> updateUser(@Path("user_id") int userId, @Body UserCreate userUpdate);
 
     // ==================== DOCTORS ====================
     @POST("doctors")
@@ -30,6 +33,9 @@ public interface ApiService {
     @GET("doctors/{doctor_id}")
     Call<DoctorResponse> getDoctorById(@Path("doctor_id") int doctorId);
 
+    @PUT("doctors/{doctor_id}")
+    Call<MessageResponse> updateDoctor(@Path("doctor_id") int doctorId, @Body DoctorCreate doctorUpdate);
+
     // ==================== PATIENTS ====================
     @POST("patients")
     Call<PatientResponse> createPatient(@Body PatientCreate patientCreate);
@@ -39,6 +45,9 @@ public interface ApiService {
 
     @GET("patients/{patient_id}")
     Call<PatientResponse> getPatientById(@Path("patient_id") int patientId);
+
+    @PUT("patients/{patient_id}")
+    Call<MessageResponse> updatePatient(@Path("patient_id") int patientId, @Body PatientCreate patientUpdate);
 
     // ==================== SPECIALIZATIONS ====================
     @POST("specializations")
@@ -116,8 +125,18 @@ public interface ApiService {
     @GET("prescriptions/patient/{patient_id}")
     Call<List<PrescriptionResponse>> getPatientPrescriptions(@Path("patient_id") int patientId);
 
+    @PUT("prescriptions/{prescription_id}")
+    Call<MessageResponse> updatePrescription(@Path("prescription_id") int prescriptionId, @Body PrescriptionUpdate prescriptionUpdate);
+
     @POST("prescription-items")
     Call<PrescriptionItemResponse> addPrescriptionItem(@Body PrescriptionItemCreate prescriptionItemCreate);
+
+    // ==================== NOTIFICATIONS ====================
+    @GET("notifications/{user_id}")
+    Call<List<Notification>> getNotifications(@Path("user_id") int userId);
+
+    @PUT("notifications/{notification_id}/read")
+    Call<MessageResponse> markNotificationRead(@Path("notification_id") int notificationId);
 
     // ==================== DASHBOARD & STATISTICS ====================
     @GET("stats/dashboard")

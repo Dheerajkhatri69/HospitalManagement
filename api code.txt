@@ -1,0 +1,2435 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+import numpy as np
+import math
+from PIL import Image
+import io
+import json
+import psycopg2
+from fastapi import UploadFile, File
+from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, EmailStr
+from typing import List, Optional, Dict, Any
+from datetime import date, time, datetime
+from enum import Enum
+import tensorflow as tf
+
+# =========================
+# FastAPI App
+# =========================
+app = FastAPI(title="Hospital Management API", version="1.1.0")
+
+# =========================
+# Database Connection
+# =========================
+def get_db():
+    db_url = os.environ.get("DATABASE_URL")
+
+    if not db_url:
+        raise HTTPException(
+            status_code=500,
+            detail="DATABASE_URL environment variable is not set"
+        )
+
+    try:
+        return psycopg2.connect(db_url)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database connection failed: {str(e)}"
+        )
+
+# =========================
+# Pydantic Models
+# =========================
+
+# ---- User ----
+class UserCreate(BaseModel):
+    full_name: str
+    email: EmailStr
+    password: str
+    role: str
+
+class UserResponse(BaseModel):
+    user_id: int
+    full_name: str
+    email: str
+    role: str
+    created_at: datetime
+
+# ---- Login ----
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class LoginResponse(BaseModel):
+    user_id: int
+    full_name: str
+    email: str
+    role: str
+    token: Optional[str] = None  # For future JWT implementation
+    patient_id: Optional[int] = None
+    doctor_id: Optional[int] = None
+
+# ---- Doctor ----
+class DoctorCreate(BaseModel):
+    user_id: int
+    bio: Optional[str] = None
+    office_phone: Optional[str] = None
+    office_address: Optional[str] = None
+    years_experience: Optional[int] = None
+
+class DoctorResponse(BaseModel):
+    doctor_id: int
+    user_id: int
+    full_name: str
+    email: str
+    bio: Optional[str]
+    office_phone: Optional[str]
+    office_address: Optional[str]
+    years_experience: Optional[int]
+    specializations: List[str] = []
+
+# ---- Patient ----
+class PatientCreate(BaseModel):
+    user_id: int
+    date_of_birth: Optional[date] = None
+    gender: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    emergency_contact: Optional[str] = None
+    medical_history: Optional[str] = None
+    insurance_info: Optional[str] = None
+
+class PatientResponse(BaseModel):
+    patient_id: int
+    user_id: int
+    full_name: str
+    email: str
+    date_of_birth: Optional[date]
+    gender: Optional[str]
+    phone: Optional[str]
+    emergency_contact: Optional[str]
+    medical_history: Optional[str]
+    insurance_info: Optional[str]
+
+# ---- Specialization ----
+class SpecializationCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class SpecializationResponse(BaseModel):
+    spec_id: int
+    name: str
+    description: Optional[str]
+
+# ---- Doctor Specialization ----
+class DoctorSpecializationCreate(BaseModel):
+    doctor_id: int
+    spec_id: int
+
+# ---- Doctor Availability ----
+class DoctorAvailabilityCreate(BaseModel):
+    doctor_id: int
+    day_of_week: str
+    start_time: time
+    end_time: time
+    is_available: bool = True
+
+class DoctorAvailabilityResponse(BaseModel):
+    avail_id: int
+    doctor_id: int
+    doctor_name: str
+    day_of_week: str
+    start_time: str
+    end_time: str
+    is_available: bool
+
+# ---- Appointment Request ----
+class AppointmentRequestCreate(BaseModel):
+    patient_id: int
+    spec_id: int
+    doctor_id: Optional[int] = None
+    preferred_date: date
+    preferred_time: time
+    notes: Optional[str] = None
+
+class AppointmentRequestResponse(BaseModel):
+    request_id: int
+    patient_id: int
+    patient_name: str
+    specialization: str
+    doctor_id: Optional[int]
+    doctor_name: Optional[str]
+    preferred_date: date
+    preferred_time: str
+    status: str
+    notes: Optional[str]
+    created_at: datetime
+
+class AppointmentRequestUpdate(BaseModel):
+    status: str  # pending, approved, rejected, cancelled
+
+# ---- Appointment ----
+class AppointmentCreate(BaseModel):
+    request_id: int
+    patient_id: int
+    doctor_id: int
+    scheduled_date: date
+    scheduled_time: time
+    status: str = "scheduled"
+
+class AppointmentResponse(BaseModel):
+    appointment_id: int
+    request_id: int
+    patient_id: int
+    patient_name: str
+    doctor_id: int
+    doctor_name: str
+    specialization: str
+    scheduled_date: date
+    scheduled_time: str
+    status: str
+    created_at: datetime
+
+class AppointmentUpdate(BaseModel):
+    scheduled_date: Optional[date] = None
+    scheduled_time: Optional[time] = None
+    status: Optional[str] = None
+
+# ---- Chat ----
+class ChatCreate(BaseModel):
+    sender_id: int
+    receiver_id: int
+    appointment_id: Optional[int] = None
+    message: str
+    chat_type: str
+
+class ChatResponse(BaseModel):
+    chat_id: int
+    sender_id: int
+    sender_name: str
+    receiver_id: int
+    receiver_name: str
+    appointment_id: Optional[int]
+    message: str
+    chat_type: str
+    sent_at: datetime
+
+# ---- Prescription ----
+class PrescriptionCreate(BaseModel):
+    appointment_id: int
+    patient_id: int
+    doctor_id: int
+    notes: Optional[str] = None
+
+class PrescriptionResponse(BaseModel):
+    prescription_id: int
+    appointment_id: int
+    patient_id: int
+    patient_name: str
+    doctor_id: int
+    doctor_name: str
+    notes: Optional[str]
+    prescribed_at: datetime
+    items: List[Dict[str, Any]] = []
+
+# ---- Prescription Item ----
+class PrescriptionItemCreate(BaseModel):
+    prescription_id: int
+    medication_name: str
+    dosage: str
+    frequency: str
+    duration: str
+    instructions: Optional[str] = None
+
+class PrescriptionItemResponse(BaseModel):
+    item_id: int
+    prescription_id: int
+    medication_name: str
+    dosage: str
+    frequency: str
+    duration: str
+    instructions: Optional[str]
+
+# ---- Notification ----
+class NotificationResponse(BaseModel):
+    notification_id: int
+    user_id: int
+    title: str
+    message: str
+    is_read: bool
+    created_at: datetime
+
+# =========================
+# HELPER FUNCTIONS
+# =========================
+def create_notification_internal(cur, user_id, title, message):
+    """
+    Helper function to create a notification within an existing transaction.
+    """
+    try:
+        cur.execute("""
+            INSERT INTO notifications (user_id, title, message)
+            VALUES (%s, %s, %s)
+        """, (user_id, title, message))
+    except Exception as e:
+        print(f"Failed to create notification: {e}")
+
+# =========================
+# AI HELPER FUNCTIONS
+# =========================
+def preprocess_multichannel(t1_bytes, t1ce_bytes, t2_bytes, flair_bytes):
+    """
+    Stacks 4 separate PNGs into the exact (192, 192, 4) block the AI expects.
+    Crucial: Order must be T1 -> T1ce -> T2 -> FLAIR
+    """
+    layers = [t1_bytes, t1ce_bytes, t2_bytes, flair_bytes]
+    processed = []
+    
+    for file_data in layers:
+        image = Image.open(io.BytesIO(file_data)).convert('L') # Force Grayscale
+        image = image.resize((192, 192))
+        img_array = np.array(image) / 255.0 # Normalize 0-1
+        processed.append(img_array)
+        
+    # Stack along depth: (192, 192, 4)
+    stacked = np.stack(processed, axis=-1)
+    # Add batch dimension: (1, 192, 192, 4)
+    return np.expand_dims(stacked, axis=0)
+
+def calculate_2d_metrics(mask):
+    """
+    Calculates Area (cm²) and RECIST Diameter (cm).
+    Assumption: 1 pixel = 1 mm² (Standard BraTS resolution)
+    """
+    # 1. Area Calculation
+    # Sum pixels -> mm² -> divide by 100 -> cm²
+    core_area = round(np.sum(mask[:,:,:,0]) / 100, 2)
+    edema_area = round(np.sum(mask[:,:,:,1]) / 100, 2)
+    enhance_area = round(np.sum(mask[:,:,:,2]) / 100, 2)
+    total_area = round(core_area + edema_area + enhance_area, 2)
+    
+    # 2. Max Diameter (RECIST Proxy)
+    # Collapse all 3 channels to get "Any Tumor" shape
+    tumor_shape = np.sum(mask, axis=-1)[0] > 0 
+    
+    diameter_cm = 0.0
+    if np.sum(tumor_shape) > 0:
+        y, x = np.nonzero(tumor_shape)
+        # Bounding box diagonal approximation (Fast & Robust)
+        h = np.max(y) - np.min(y)
+        w = np.max(x) - np.min(x)
+        diameter_mm = math.sqrt(h**2 + w**2)
+        diameter_cm = round(diameter_mm / 10, 2) # mm to cm
+
+    return core_area, edema_area, enhance_area, total_area, diameter_cm
+
+def generate_medical_flags(core, edema, enhance, diameter):
+    flags = []
+    risk = "Low"
+    
+    # RECIST Rule: Tumor > 5cm is significant
+    if diameter > 5.0:
+        risk = "High (Large Mass)"
+        flags.append(f"Large Mass Detected ({diameter} cm).")
+        
+    # Edema Rule: Swelling > 70% of total mass
+    total = core + edema + enhance
+    if total > 0 and (edema / total) > 0.7:
+        flags.append("Significant Edema (Swelling) detected.")
+        if risk == "Low": risk = "Moderate (Mass Effect)"
+
+    # HGG Rule: Presence of Necrosis + Enhancement
+    if core > 1.0 and enhance > 1.0:
+        risk = "High (Aggressive)"
+        flags.append("Complex Tumor Profile (Necrosis + Enhancement).")
+
+    return risk, flags
+
+# =========================
+# AI MODEL CONFIGURATION
+# =========================
+MODEL_PATH = "best_hospital_model_4ch.h5"
+THRESHOLDS = [0.55, 0.45, 0.30] # [Core, Edema, Enhancing]
+
+# Dummy functions required to load the model (since we only need inference)
+def dice_coef(y_true, y_pred): return 0 
+def dice_loss(y_true, y_pred): return 0
+
+# Load Model Global Variable
+ai_model = None
+
+try:
+    if os.path.exists(MODEL_PATH):
+        # Disable compilation to avoid needing the loss function logic
+        ai_model = tf.keras.models.load_model(
+            MODEL_PATH, 
+            custom_objects={'dice_coef': dice_coef, 'dice_loss': dice_loss},
+            compile=False
+        )
+        print("✅ Hospital-Grade MRI Model Loaded.")
+    else:
+        print("⚠️ Model file missing. Upload 'best_hospital_model_4ch.h5' to Space.")
+except Exception as e:
+    print(f"❌ Critical Model Error: {e}")
+
+# =========================
+# DB MIGRATION / SETUP
+# =========================
+@app.on_event("startup")
+def ensure_schema():
+    """
+    Ensures that the database schema is up to date.
+    Adds 'doctor_id' to 'appointment_requests' if it's missing.
+    Creates 'notifications', 'chats', 'prescriptions', 'mri_reports' tables if missing.
+    """
+    conn = None
+    try:
+        db_url = os.environ.get("DATABASE_URL")
+        if not db_url: return
+        
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+        
+        # Check if doctor_id column exists in appointment_requests
+        cur.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='appointment_requests' AND column_name='doctor_id'
+        """)
+        if not cur.fetchone():
+            print("Migrating: Adding doctor_id to appointment_requests...")
+            cur.execute("ALTER TABLE appointment_requests ADD COLUMN doctor_id INTEGER REFERENCES doctors(doctor_id)")
+            conn.commit()
+            
+        # Create notifications table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS notifications (
+                notification_id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(user_id),
+                title VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                is_read BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Create chats table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS chats (
+                chat_id SERIAL PRIMARY KEY,
+                sender_id INTEGER REFERENCES users(user_id),
+                receiver_id INTEGER REFERENCES users(user_id),
+                appointment_id INTEGER,
+                message TEXT NOT NULL,
+                chat_type VARCHAR(50),
+                sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Create prescriptions table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS prescriptions (
+                prescription_id SERIAL PRIMARY KEY,
+                appointment_id INTEGER REFERENCES appointments(appointment_id),
+                patient_id INTEGER REFERENCES patients(patient_id),
+                doctor_id INTEGER REFERENCES doctors(doctor_id),
+                notes TEXT,
+                prescribed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Create prescription_items table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS prescription_items (
+                item_id SERIAL PRIMARY KEY,
+                prescription_id INTEGER REFERENCES prescriptions(prescription_id),
+                medication_name VARCHAR(255) NOT NULL,
+                dosage VARCHAR(100),
+                frequency VARCHAR(100),
+                duration VARCHAR(100),
+                instructions TEXT
+            )
+        """)
+
+        # Create mri_reports table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS mri_reports (
+                report_id SERIAL PRIMARY KEY,
+                patient_id INTEGER REFERENCES patients(patient_id),
+                necrotic_core_area FLOAT,
+                edema_area FLOAT,
+                enhancing_tumor_area FLOAT,
+                total_tumor_area FLOAT,
+                max_diameter_cm FLOAT,
+                risk_assessment VARCHAR(100),
+                clinical_flags TEXT,
+                scan_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        conn.commit()
+            
+        cur.close()
+        conn.close()
+        print("Schema check complete.")
+    except Exception as e:
+        print(f"Schema check failed: {e}")
+        if conn: conn.close()
+
+# =========================
+# Routes
+# =========================
+
+@app.get("/")
+def home():
+    return {
+        "status": "Hospital System Online",
+        "version": "1.1.0",
+        "endpoints": [
+            "/login",
+            "/users",
+            "/doctors",
+            "/patients",
+            "/specializations",
+            "/availability",
+            "/appointment-requests",
+            "/appointments",
+            "/chats",
+            "/prescriptions",
+            "/notifications"
+        ]
+    }
+
+# =========================
+# AUTHENTICATION
+# =========================
+@app.post("/login", response_model=LoginResponse)
+def login(request: LoginRequest):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # Check user
+        query = """
+            SELECT user_id, full_name, role, password_hash
+            FROM users
+            WHERE email = %s
+        """
+        cur.execute(query, (request.email,))
+        user = cur.fetchone()
+
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+
+        user_id, full_name, role, stored_password = user
+
+        # Simple password check
+        if request.password != stored_password:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+
+        # Get patient/doctor ID if exists
+        patient_id = None
+        doctor_id = None
+        
+        if role == "patient":
+            cur.execute("SELECT patient_id FROM patients WHERE user_id = %s", (user_id,))
+            patient_data = cur.fetchone()
+            if patient_data:
+                patient_id = patient_data[0]
+        
+        if role == "doctor":
+            cur.execute("SELECT doctor_id FROM doctors WHERE user_id = %s", (user_id,))
+            doctor_data = cur.fetchone()
+            if doctor_data:
+                doctor_id = doctor_data[0]
+
+        return {
+            "user_id": user_id,
+            "full_name": full_name,
+            "email": request.email,
+            "role": role,
+            "patient_id": patient_id,
+            "doctor_id": doctor_id,
+            "message": "Login successful"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+# =========================
+# USERS
+# =========================
+@app.post("/users", response_model=UserResponse)
+def create_user(user: UserCreate):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            INSERT INTO users (full_name, email, password_hash, role)
+            VALUES (%s, %s, %s, %s)
+            RETURNING user_id, full_name, email, role, created_at
+        """
+        cur.execute(query, (user.full_name, user.email, user.password, user.role))
+        result = cur.fetchone()
+        
+        user_id = result[0]
+        
+        # If role is patient, automatically create patient record
+        if user.role == "patient":
+            patient_query = """
+                INSERT INTO patients (user_id)
+                VALUES (%s)
+            """
+            cur.execute(patient_query, (user_id,))
+        
+        conn.commit()
+
+        return {
+            "user_id": result[0],
+            "full_name": result[1],
+            "email": result[2],
+            "role": result[3],
+            "created_at": result[4]
+        }
+
+    except psycopg2.IntegrityError:
+        raise HTTPException(status_code=400, detail="Email already exists")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/users", response_model=List[UserResponse])
+def get_all_users():
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = "SELECT user_id, full_name, email, role, created_at FROM users"
+        cur.execute(query)
+        users = cur.fetchall()
+
+        return [
+            {
+                "user_id": u[0],
+                "full_name": u[1],
+                "email": u[2],
+                "role": u[3],
+                "created_at": u[4]
+            }
+            for u in users
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+# =========================
+# DOCTORS
+# =========================
+@app.post("/doctors", response_model=DoctorResponse)
+def create_doctor(doctor: DoctorCreate):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # Create doctor
+        query = """
+            INSERT INTO doctors (user_id, bio, office_phone, office_address, years_experience)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING doctor_id, user_id
+        """
+        cur.execute(query, (
+            doctor.user_id, doctor.bio, doctor.office_phone, 
+            doctor.office_address, doctor.years_experience
+        ))
+        result = cur.fetchone()
+        conn.commit()
+
+        # Get user details
+        cur.execute("SELECT full_name, email FROM users WHERE user_id = %s", (doctor.user_id,))
+        user_data = cur.fetchone()
+
+        return {
+            "doctor_id": result[0],
+            "user_id": result[1],
+            "full_name": user_data[0],
+            "email": user_data[1],
+            "bio": doctor.bio,
+            "office_phone": doctor.office_phone,
+            "office_address": doctor.office_address,
+            "years_experience": doctor.years_experience,
+            "specializations": []
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/doctors", response_model=List[DoctorResponse])
+def get_all_doctors():
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            SELECT 
+                d.doctor_id,
+                d.user_id,
+                u.full_name,
+                u.email,
+                d.bio,
+                d.office_phone,
+                d.office_address,
+                d.years_experience
+            FROM doctors d
+            JOIN users u ON d.user_id = u.user_id
+        """
+        cur.execute(query)
+        doctors = cur.fetchall()
+
+        result = []
+        for doc in doctors:
+            # Get specializations for each doctor
+            cur.execute("""
+                SELECT s.name 
+                FROM doctor_specializations ds
+                JOIN specializations s ON ds.spec_id = s.spec_id
+                WHERE ds.doctor_id = %s
+            """, (doc[0],))
+            specializations = [spec[0] for spec in cur.fetchall()]
+
+            result.append({
+                "doctor_id": doc[0],
+                "user_id": doc[1],
+                "full_name": doc[2],
+                "email": doc[3],
+                "bio": doc[4],
+                "office_phone": doc[5],
+                "office_address": doc[6],
+                "years_experience": doc[7],
+                "specializations": specializations
+            })
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/doctors/{doctor_id}", response_model=DoctorResponse)
+def get_doctor(doctor_id: int):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            SELECT 
+                d.doctor_id,
+                d.user_id,
+                u.full_name,
+                u.email,
+                d.bio,
+                d.office_phone,
+                d.office_address,
+                d.years_experience
+            FROM doctors d
+            JOIN users u ON d.user_id = u.user_id
+            WHERE d.doctor_id = %s
+        """
+        cur.execute(query, (doctor_id,))
+        doctor = cur.fetchone()
+
+        if not doctor:
+            raise HTTPException(status_code=404, detail="Doctor not found")
+
+        # Get specializations
+        cur.execute("""
+            SELECT s.name 
+            FROM doctor_specializations ds
+            JOIN specializations s ON ds.spec_id = s.spec_id
+            WHERE ds.doctor_id = %s
+        """, (doctor_id,))
+        specializations = [spec[0] for spec in cur.fetchall()]
+
+        return {
+            "doctor_id": doctor[0],
+            "user_id": doctor[1],
+            "full_name": doctor[2],
+            "email": doctor[3],
+            "bio": doctor[4],
+            "office_phone": doctor[5],
+            "office_address": doctor[6],
+            "years_experience": doctor[7],
+            "specializations": specializations
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+# =========================
+# PATIENTS
+# =========================
+@app.post("/patients", response_model=PatientResponse)
+def create_patient(patient: PatientCreate):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            INSERT INTO patients (user_id, date_of_birth, gender, address, phone, 
+                                 emergency_contact, medical_history, insurance_info)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING patient_id, user_id
+        """
+        cur.execute(query, (
+            patient.user_id, patient.date_of_birth, patient.gender, patient.address,
+            patient.phone, patient.emergency_contact, patient.medical_history, 
+            patient.insurance_info
+        ))
+        result = cur.fetchone()
+        conn.commit()
+
+        # Get user details
+        cur.execute("SELECT full_name, email FROM users WHERE user_id = %s", (patient.user_id,))
+        user_data = cur.fetchone()
+
+        return {
+            "patient_id": result[0],
+            "user_id": result[1],
+            "full_name": user_data[0],
+            "email": user_data[1],
+            "date_of_birth": patient.date_of_birth,
+            "gender": patient.gender,
+            "phone": patient.phone,
+            "emergency_contact": patient.emergency_contact,
+            "medical_history": patient.medical_history,
+            "insurance_info": patient.insurance_info
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/patients", response_model=List[PatientResponse])
+def get_all_patients():
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            SELECT 
+                p.patient_id,
+                p.user_id,
+                u.full_name,
+                u.email,
+                p.date_of_birth,
+                p.gender,
+                p.phone,
+                p.emergency_contact,
+                p.medical_history,
+                p.insurance_info
+            FROM patients p
+            JOIN users u ON p.user_id = u.user_id
+        """
+        cur.execute(query)
+        patients = cur.fetchall()
+
+        return [
+            {
+                "patient_id": p[0],
+                "user_id": p[1],
+                "full_name": p[2],
+                "email": p[3],
+                "date_of_birth": p[4],
+                "gender": p[5],
+                "phone": p[6],
+                "emergency_contact": p[7],
+                "medical_history": p[8],
+                "insurance_info": p[9]
+            }
+            for p in patients
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/patients/{patient_id}", response_model=PatientResponse)
+def get_patient(patient_id: int):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            SELECT 
+                p.patient_id,
+                p.user_id,
+                u.full_name,
+                u.email,
+                p.date_of_birth,
+                p.gender,
+                p.phone,
+                p.emergency_contact,
+                p.medical_history,
+                p.insurance_info
+            FROM patients p
+            JOIN users u ON p.user_id = u.user_id
+            WHERE p.patient_id = %s
+        """
+        cur.execute(query, (patient_id,))
+        patient = cur.fetchone()
+
+        if not patient:
+            raise HTTPException(status_code=404, detail="Patient not found")
+
+        return {
+            "patient_id": patient[0],
+            "user_id": patient[1],
+            "full_name": patient[2],
+            "email": patient[3],
+            "date_of_birth": patient[4],
+            "gender": patient[5],
+            "phone": patient[6],
+            "emergency_contact": patient[7],
+            "medical_history": patient[8],
+            "insurance_info": patient[9]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+# =========================
+# SPECIALIZATIONS
+# =========================
+@app.post("/specializations", response_model=SpecializationResponse)
+def create_specialization(spec: SpecializationCreate):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            INSERT INTO specializations (name, description)
+            VALUES (%s, %s)
+            RETURNING spec_id, name, description
+        """
+        cur.execute(query, (spec.name, spec.description))
+        result = cur.fetchone()
+        conn.commit()
+
+        return {
+            "spec_id": result[0],
+            "name": result[1],
+            "description": result[2]
+        }
+
+    except psycopg2.IntegrityError:
+        raise HTTPException(status_code=400, detail="Specialization already exists")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/specializations", response_model=List[SpecializationResponse])
+def get_all_specializations():
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = "SELECT spec_id, name, description FROM specializations"
+        cur.execute(query)
+        specs = cur.fetchall()
+
+        return [
+            {
+                "spec_id": s[0],
+                "name": s[1],
+                "description": s[2]
+            }
+            for s in specs
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.post("/doctor-specializations")
+def add_doctor_specialization(ds: DoctorSpecializationCreate):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            INSERT INTO doctor_specializations (doctor_id, spec_id)
+            VALUES (%s, %s)
+            RETURNING id
+        """
+        cur.execute(query, (ds.doctor_id, ds.spec_id))
+        conn.commit()
+
+        return {"message": "Specialization added to doctor successfully"}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+# =========================
+# DOCTOR AVAILABILITY
+# =========================
+@app.post("/availability", response_model=DoctorAvailabilityResponse)
+def create_availability(availability: DoctorAvailabilityCreate):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            INSERT INTO doctor_availability (doctor_id, day_of_week, start_time, end_time, is_available)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING avail_id
+        """
+        cur.execute(query, (
+            availability.doctor_id, availability.day_of_week, 
+            availability.start_time, availability.end_time, availability.is_available
+        ))
+        avail_id = cur.fetchone()[0]
+        conn.commit()
+
+        # Get doctor name
+        cur.execute("""
+            SELECT u.full_name 
+            FROM doctors d
+            JOIN users u ON d.user_id = u.user_id
+            WHERE d.doctor_id = %s
+        """, (availability.doctor_id,))
+        doctor_name = cur.fetchone()[0]
+
+        return {
+            "avail_id": avail_id,
+            "doctor_id": availability.doctor_id,
+            "doctor_name": doctor_name,
+            "day_of_week": availability.day_of_week,
+            "start_time": str(availability.start_time),
+            "end_time": str(availability.end_time),
+            "is_available": availability.is_available
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/availability/doctor/{doctor_id}", response_model=List[DoctorAvailabilityResponse])
+def get_doctor_availability(doctor_id: int):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # Get doctor name
+        cur.execute("""
+            SELECT u.full_name 
+            FROM doctors d
+            JOIN users u ON d.user_id = u.user_id
+            WHERE d.doctor_id = %s
+        """, (doctor_id,))
+        doctor_name_result = cur.fetchone()
+        
+        if not doctor_name_result:
+            raise HTTPException(status_code=404, detail="Doctor not found")
+        
+        doctor_name = doctor_name_result[0]
+
+        # Get availability
+        query = """
+            SELECT avail_id, day_of_week, start_time, end_time, is_available
+            FROM doctor_availability
+            WHERE doctor_id = %s
+            ORDER BY 
+                CASE day_of_week
+                    WHEN 'Monday' THEN 1
+                    WHEN 'Tuesday' THEN 2
+                    WHEN 'Wednesday' THEN 3
+                    WHEN 'Thursday' THEN 4
+                    WHEN 'Friday' THEN 5
+                    WHEN 'Saturday' THEN 6
+                    WHEN 'Sunday' THEN 7
+                END,
+                start_time
+        """
+        cur.execute(query, (doctor_id,))
+        availabilities = cur.fetchall()
+
+        return [
+            {
+                "avail_id": a[0],
+                "doctor_id": doctor_id,
+                "doctor_name": doctor_name,
+                "day_of_week": a[1],
+                "start_time": str(a[2]),
+                "end_time": str(a[3]),
+                "is_available": a[4]
+            }
+            for a in availabilities
+        ]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+# =========================
+# APPOINTMENT REQUESTS
+# =========================
+@app.post("/appointment-requests", response_model=AppointmentRequestResponse)
+def create_appointment_request(request: AppointmentRequestCreate):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # Check if patient exists
+        cur.execute("SELECT patient_id FROM patients WHERE patient_id = %s", (request.patient_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Patient not found")
+
+        # Check if specialization exists
+        cur.execute("SELECT name FROM specializations WHERE spec_id = %s", (request.spec_id,))
+        spec_data = cur.fetchone()
+        if not spec_data:
+            raise HTTPException(status_code=404, detail="Specialization not found")
+        spec_name = spec_data[0]
+        
+        # Check if doctor exists (if provided)
+        doctor_name = None
+        if request.doctor_id:
+            cur.execute("""
+                SELECT u.full_name 
+                FROM doctors d
+                JOIN users u ON d.user_id = u.user_id
+                WHERE d.doctor_id = %s
+            """, (request.doctor_id,))
+            doc_data = cur.fetchone()
+            if not doc_data:
+                raise HTTPException(status_code=404, detail="Doctor not found")
+            doctor_name = doc_data[0]
+
+        # Get patient name
+        cur.execute("""
+            SELECT u.full_name 
+            FROM patients p
+            JOIN users u ON p.user_id = u.user_id
+            WHERE p.patient_id = %s
+        """, (request.patient_id,))
+        patient_name = cur.fetchone()[0]
+
+        # Create request
+        query = """
+            INSERT INTO appointment_requests (patient_id, spec_id, doctor_id, preferred_date, preferred_time, notes)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING request_id, status, created_at
+        """
+        cur.execute(query, (
+            request.patient_id, request.spec_id, request.doctor_id, 
+            request.preferred_date, request.preferred_time, request.notes
+        ))
+        result = cur.fetchone()
+        conn.commit()
+
+        return {
+            "request_id": result[0],
+            "patient_id": request.patient_id,
+            "patient_name": patient_name,
+            "specialization": spec_name,
+            "doctor_id": request.doctor_id,
+            "doctor_name": doctor_name,
+            "preferred_date": request.preferred_date,
+            "preferred_time": str(request.preferred_time),
+            "status": result[1],
+            "notes": request.notes,
+            "created_at": result[2]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/appointment-requests", response_model=List[AppointmentRequestResponse])
+def get_all_appointment_requests(status: Optional[str] = None):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            SELECT 
+                ar.request_id,
+                ar.patient_id,
+                u.full_name as patient_name,
+                s.name as spec_name,
+                ar.preferred_date,
+                ar.preferred_time,
+                ar.status,
+                ar.notes,
+                ar.created_at,
+                ar.doctor_id,
+                du.full_name as doctor_name
+            FROM appointment_requests ar
+            JOIN patients p ON ar.patient_id = p.patient_id
+            JOIN users u ON p.user_id = u.user_id
+            JOIN specializations s ON ar.spec_id = s.spec_id
+            LEFT JOIN doctors d ON ar.doctor_id = d.doctor_id
+            LEFT JOIN users du ON d.user_id = du.user_id
+        """
+        
+        if status:
+            query += " WHERE ar.status = %s"
+            cur.execute(query, (status,))
+        else:
+            cur.execute(query)
+
+        requests = cur.fetchall()
+
+        return [
+            {
+                "request_id": r[0],
+                "patient_id": r[1],
+                "patient_name": r[2],
+                "specialization": r[3],
+                "preferred_date": r[4],
+                "preferred_time": str(r[5]),
+                "status": r[6],
+                "notes": r[7],
+                "created_at": r[8],
+                "doctor_id": r[9],
+                "doctor_name": r[10]
+            }
+            for r in requests
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/appointment-requests/patient/{patient_id}", response_model=List[AppointmentRequestResponse])
+def get_patient_appointment_requests(patient_id: int):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            SELECT 
+                ar.request_id,
+                ar.patient_id,
+                u.full_name as patient_name,
+                s.name as spec_name,
+                ar.preferred_date,
+                ar.preferred_time,
+                ar.status,
+                ar.notes,
+                ar.created_at,
+                ar.doctor_id,
+                du.full_name as doctor_name
+            FROM appointment_requests ar
+            JOIN patients p ON ar.patient_id = p.patient_id
+            JOIN users u ON p.user_id = u.user_id
+            JOIN specializations s ON ar.spec_id = s.spec_id
+            LEFT JOIN doctors d ON ar.doctor_id = d.doctor_id
+            LEFT JOIN users du ON d.user_id = du.user_id
+            WHERE ar.patient_id = %s
+            ORDER BY ar.created_at DESC
+        """
+        cur.execute(query, (patient_id,))
+        requests = cur.fetchall()
+
+        return [
+            {
+                "request_id": r[0],
+                "patient_id": r[1],
+                "patient_name": r[2],
+                "specialization": r[3],
+                "preferred_date": r[4],
+                "preferred_time": str(r[5]),
+                "status": r[6],
+                "notes": r[7],
+                "created_at": r[8],
+                "doctor_id": r[9],
+                "doctor_name": r[10]
+            }
+            for r in requests
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.put("/appointment-requests/{request_id}")
+def update_appointment_request(request_id: int, update: AppointmentRequestUpdate):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # Check if request exists and fetch details
+        cur.execute("""
+            SELECT patient_id, doctor_id, preferred_date, preferred_time, spec_id 
+            FROM appointment_requests 
+            WHERE request_id = %s
+        """, (request_id,))
+        req_data = cur.fetchone()
+        
+        if not req_data:
+            raise HTTPException(status_code=404, detail="Appointment request not found")
+
+        patient_id, doctor_id, pref_date, pref_time, spec_id = req_data
+
+        # Get patient name for notification
+        cur.execute("""
+            SELECT u.full_name 
+            FROM patients p
+            JOIN users u ON p.user_id = u.user_id
+            WHERE p.patient_id = %s
+        """, (patient_id,))
+        patient_name = cur.fetchone()[0]
+
+        # Update status
+        query = """
+            UPDATE appointment_requests
+            SET status = %s
+            WHERE request_id = %s
+        """
+        cur.execute(query, (update.status, request_id))
+        
+        # AUTOMATICALLY CREATE APPOINTMENT IF APPROVED
+        if update.status == "approved":
+            # If no doctor assigned, try to find one automatically
+            if not doctor_id:
+                cur.execute("""
+                    SELECT doctor_id FROM doctor_specializations 
+                    WHERE spec_id = %s 
+                    LIMIT 1
+                """, (spec_id,))
+                doc_found = cur.fetchone()
+                if doc_found:
+                    doctor_id = doc_found[0]
+                    # Update request with assigned doctor
+                    cur.execute("UPDATE appointment_requests SET doctor_id = %s WHERE request_id = %s", (doctor_id, request_id))
+                else:
+                    # No doctor found for this spec
+                    raise HTTPException(status_code=400, detail="Cannot approve: No doctor assigned and none found for this specialization.")
+
+            if doctor_id:
+                # Create appointment
+                insert_appt = """
+                    INSERT INTO appointments (request_id, patient_id, doctor_id, scheduled_date, scheduled_time, status)
+                    VALUES (%s, %s, %s, %s, %s, 'scheduled')
+                    RETURNING appointment_id
+                """
+                cur.execute(insert_appt, (request_id, patient_id, doctor_id, pref_date, pref_time))
+                
+                # Notify Doctor
+                cur.execute("SELECT user_id FROM doctors WHERE doctor_id = %s", (doctor_id,))
+                doc_user_id = cur.fetchone()[0]
+                create_notification_internal(cur, doc_user_id, "New Appointment", f"New appointment scheduled with {patient_name} on {pref_date} at {pref_time}.")
+                
+                # Notify Patient
+                cur.execute("SELECT user_id FROM patients WHERE patient_id = %s", (patient_id,))
+                pat_user_id = cur.fetchone()[0]
+                create_notification_internal(cur, pat_user_id, "Appointment Approved", f"Your appointment request for {pref_date} has been approved.")
+
+        conn.commit()
+
+        return {"message": f"Appointment request status updated to {update.status}"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+# =========================
+# APPOINTMENTS
+# =========================
+@app.post("/appointments", response_model=AppointmentResponse)
+def create_appointment(appointment: AppointmentCreate):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # Check if request exists
+        cur.execute("SELECT request_id FROM appointment_requests WHERE request_id = %s", (appointment.request_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Appointment request not found")
+
+        # Get patient name
+        cur.execute("""
+            SELECT u.full_name 
+            FROM patients p
+            JOIN users u ON p.user_id = u.user_id
+            WHERE p.patient_id = %s
+        """, (appointment.patient_id,))
+        patient_name_result = cur.fetchone()
+        if not patient_name_result:
+            raise HTTPException(status_code=404, detail="Patient not found")
+        patient_name = patient_name_result[0]
+
+        # Get doctor name and specialization
+        cur.execute("""
+            SELECT u.full_name, s.name
+            FROM doctors d
+            JOIN users u ON d.user_id = u.user_id
+            LEFT JOIN doctor_specializations ds ON d.doctor_id = ds.doctor_id
+            LEFT JOIN specializations s ON ds.spec_id = s.spec_id
+            WHERE d.doctor_id = %s
+            LIMIT 1
+        """, (appointment.doctor_id,))
+        doctor_data = cur.fetchone()
+        if not doctor_data:
+            raise HTTPException(status_code=404, detail="Doctor not found")
+        doctor_name = doctor_data[0]
+        specialization = doctor_data[1] or "General"
+
+        # Create appointment
+        query = """
+            INSERT INTO appointments (request_id, patient_id, doctor_id, scheduled_date, scheduled_time, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING appointment_id, created_at
+        """
+        cur.execute(query, (
+            appointment.request_id, appointment.patient_id, appointment.doctor_id,
+            appointment.scheduled_date, appointment.scheduled_time, appointment.status
+        ))
+        result = cur.fetchone()
+        
+        # Notify Doctor
+        cur.execute("SELECT user_id FROM doctors WHERE doctor_id = %s", (appointment.doctor_id,))
+        doc_user_id = cur.fetchone()[0]
+        create_notification_internal(cur, doc_user_id, "New Appointment", f"New appointment scheduled with {patient_name} on {appointment.scheduled_date} at {appointment.scheduled_time}.")
+        
+        # Notify Patient
+        cur.execute("SELECT user_id FROM patients WHERE patient_id = %s", (appointment.patient_id,))
+        pat_user_id = cur.fetchone()[0]
+        create_notification_internal(cur, pat_user_id, "New Appointment", f"New appointment scheduled with Dr. {doctor_name} on {appointment.scheduled_date} at {appointment.scheduled_time}.")
+        
+        conn.commit()
+
+        return {
+            "appointment_id": result[0],
+            "request_id": appointment.request_id,
+            "patient_id": appointment.patient_id,
+            "patient_name": patient_name,
+            "doctor_id": appointment.doctor_id,
+            "doctor_name": doctor_name,
+            "specialization": specialization,
+            "scheduled_date": appointment.scheduled_date,
+            "scheduled_time": str(appointment.scheduled_time),
+            "status": appointment.status,
+            "created_at": result[1]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/appointments", response_model=List[AppointmentResponse])
+def get_all_appointments(
+    doctor_id: Optional[int] = None,
+    patient_id: Optional[int] = None,
+    status: Optional[str] = None
+):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            SELECT 
+                a.appointment_id,
+                a.request_id,
+                a.patient_id,
+                pu.full_name as patient_name,
+                a.doctor_id,
+                du.full_name as doctor_name,
+                s.name as specialization,
+                a.scheduled_date,
+                a.scheduled_time,
+                a.status,
+                a.created_at
+            FROM appointments a
+            JOIN patients p ON a.patient_id = p.patient_id
+            JOIN users pu ON p.user_id = pu.user_id
+            JOIN doctors d ON a.doctor_id = d.doctor_id
+            JOIN users du ON d.user_id = du.user_id
+            LEFT JOIN doctor_specializations ds ON d.doctor_id = ds.doctor_id
+            LEFT JOIN specializations s ON ds.spec_id = s.spec_id
+            WHERE 1=1
+        """
+        
+        params = []
+        if doctor_id:
+            query += " AND a.doctor_id = %s"
+            params.append(doctor_id)
+        if patient_id:
+            query += " AND a.patient_id = %s"
+            params.append(patient_id)
+        if status:
+            query += " AND a.status = %s"
+            params.append(status)
+        
+        query += " ORDER BY a.scheduled_date DESC, a.scheduled_time DESC"
+        
+        cur.execute(query, tuple(params))
+        appointments = cur.fetchall()
+
+        return [
+            {
+                "appointment_id": a[0],
+                "request_id": a[1],
+                "patient_id": a[2],
+                "patient_name": a[3],
+                "doctor_id": a[4],
+                "doctor_name": a[5],
+                "specialization": a[6] or "General",
+                "scheduled_date": a[7],
+                "scheduled_time": str(a[8]),
+                "status": a[9],
+                "created_at": a[10]
+            }
+            for a in appointments
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/appointments/{appointment_id}", response_model=AppointmentResponse)
+def get_appointment(appointment_id: int):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            SELECT 
+                a.appointment_id,
+                a.request_id,
+                a.patient_id,
+                pu.full_name as patient_name,
+                a.doctor_id,
+                du.full_name as doctor_name,
+                s.name as specialization,
+                a.scheduled_date,
+                a.scheduled_time,
+                a.status,
+                a.created_at
+            FROM appointments a
+            JOIN patients p ON a.patient_id = p.patient_id
+            JOIN users pu ON p.user_id = pu.user_id
+            JOIN doctors d ON a.doctor_id = d.doctor_id
+            JOIN users du ON d.user_id = du.user_id
+            LEFT JOIN doctor_specializations ds ON d.doctor_id = ds.doctor_id
+            LEFT JOIN specializations s ON ds.spec_id = s.spec_id
+            WHERE a.appointment_id = %s
+        """
+        cur.execute(query, (appointment_id,))
+        appointment = cur.fetchone()
+
+        if not appointment:
+            raise HTTPException(status_code=404, detail="Appointment not found")
+
+        return {
+            "appointment_id": appointment[0],
+            "request_id": appointment[1],
+            "patient_id": appointment[2],
+            "patient_name": appointment[3],
+            "doctor_id": appointment[4],
+            "doctor_name": appointment[5],
+            "specialization": appointment[6] or "General",
+            "scheduled_date": appointment[7],
+            "scheduled_time": str(appointment[8]),
+            "status": appointment[9],
+            "created_at": appointment[10]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.put("/appointments/{appointment_id}")
+def update_appointment(appointment_id: int, update: AppointmentUpdate):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # Check if appointment exists
+        cur.execute("SELECT appointment_id FROM appointments WHERE appointment_id = %s", (appointment_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Appointment not found")
+
+        # Build update query dynamically
+        updates = []
+        params = []
+        
+        if update.scheduled_date is not None:
+            updates.append("scheduled_date = %s")
+            params.append(update.scheduled_date)
+        if update.scheduled_time is not None:
+            updates.append("scheduled_time = %s")
+            params.append(update.scheduled_time)
+        if update.status is not None:
+            updates.append("status = %s")
+            params.append(update.status)
+        
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        params.append(appointment_id)
+        
+        query = f"""
+            UPDATE appointments
+            SET {', '.join(updates)}
+            WHERE appointment_id = %s
+        """
+        cur.execute(query, tuple(params))
+        conn.commit()
+
+        return {"message": "Appointment updated successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+# =========================
+# CHATS
+# =========================
+@app.post("/chats", response_model=ChatResponse)
+def send_message(chat: ChatCreate):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # Get sender name
+        cur.execute("SELECT full_name FROM users WHERE user_id = %s", (chat.sender_id,))
+        sender_name_result = cur.fetchone()
+        if not sender_name_result:
+            raise HTTPException(status_code=404, detail="Sender not found")
+        sender_name = sender_name_result[0]
+
+        # Get receiver name
+        cur.execute("SELECT full_name FROM users WHERE user_id = %s", (chat.receiver_id,))
+        receiver_name_result = cur.fetchone()
+        if not receiver_name_result:
+            raise HTTPException(status_code=404, detail="Receiver not found")
+        receiver_name = receiver_name_result[0]
+
+        # Send message
+        query = """
+            INSERT INTO chats (sender_id, receiver_id, appointment_id, message, chat_type)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING chat_id, sent_at
+        """
+        cur.execute(query, (
+            chat.sender_id, chat.receiver_id, chat.appointment_id,
+            chat.message, chat.chat_type
+        ))
+        result = cur.fetchone()
+        conn.commit()
+
+        return {
+            "chat_id": result[0],
+            "sender_id": chat.sender_id,
+            "sender_name": sender_name,
+            "receiver_id": chat.receiver_id,
+            "receiver_name": receiver_name,
+            "appointment_id": chat.appointment_id,
+            "message": chat.message,
+            "chat_type": chat.chat_type,
+            "sent_at": result[1]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/chats/conversation/{user1_id}/{user2_id}", response_model=List[ChatResponse])
+def get_conversation(user1_id: int, user2_id: int):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            SELECT 
+                c.chat_id,
+                c.sender_id,
+                su.full_name as sender_name,
+                c.receiver_id,
+                ru.full_name as receiver_name,
+                c.appointment_id,
+                c.message,
+                c.chat_type,
+                c.sent_at
+            FROM chats c
+            JOIN users su ON c.sender_id = su.user_id
+            JOIN users ru ON c.receiver_id = ru.user_id
+            WHERE (c.sender_id = %s AND c.receiver_id = %s)
+               OR (c.sender_id = %s AND c.receiver_id = %s)
+            ORDER BY c.sent_at ASC
+        """
+        cur.execute(query, (user1_id, user2_id, user2_id, user1_id))
+        messages = cur.fetchall()
+
+        return [
+            {
+                "chat_id": m[0],
+                "sender_id": m[1],
+                "sender_name": m[2],
+                "receiver_id": m[3],
+                "receiver_name": m[4],
+                "appointment_id": m[5],
+                "message": m[6],
+                "chat_type": m[7],
+                "sent_at": m[8]
+            }
+            for m in messages
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/chats/user/{user_id}", response_model=List[ChatResponse])
+def get_user_chats(user_id: int):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            SELECT 
+                c.chat_id,
+                c.sender_id,
+                su.full_name as sender_name,
+                c.receiver_id,
+                ru.full_name as receiver_name,
+                c.appointment_id,
+                c.message,
+                c.chat_type,
+                c.sent_at
+            FROM chats c
+            JOIN users su ON c.sender_id = su.user_id
+            JOIN users ru ON c.receiver_id = ru.user_id
+            WHERE c.sender_id = %s OR c.receiver_id = %s
+            ORDER BY c.sent_at DESC
+        """
+        cur.execute(query, (user_id, user_id))
+        messages = cur.fetchall()
+
+        return [
+            {
+                "chat_id": m[0],
+                "sender_id": m[1],
+                "sender_name": m[2],
+                "receiver_id": m[3],
+                "receiver_name": m[4],
+                "appointment_id": m[5],
+                "message": m[6],
+                "chat_type": m[7],
+                "sent_at": m[8]
+            }
+            for m in messages
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+# =========================
+# NOTIFICATIONS
+# =========================
+@app.get("/notifications/{user_id}", response_model=List[NotificationResponse])
+def get_user_notifications(user_id: int):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            SELECT notification_id, user_id, title, message, is_read, created_at
+            FROM notifications
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+        """, (user_id,))
+        notifs = cur.fetchall()
+
+        return [
+            {
+                "notification_id": n[0],
+                "user_id": n[1],
+                "title": n[2],
+                "message": n[3],
+                "is_read": n[4],
+                "created_at": n[5]
+            }
+            for n in notifs
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.put("/notifications/{notification_id}/read")
+def mark_notification_read(notification_id: int):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            UPDATE notifications
+            SET is_read = TRUE
+            WHERE notification_id = %s
+        """, (notification_id,))
+        conn.commit()
+        return {"message": "Notification marked as read"}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+# =========================
+# PRESCRIPTIONS
+# =========================
+@app.post("/prescriptions", response_model=PrescriptionResponse)
+def create_prescription(prescription: PrescriptionCreate):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # Get patient name
+        cur.execute("""
+            SELECT u.full_name 
+            FROM patients p
+            JOIN users u ON p.user_id = u.user_id
+            WHERE p.patient_id = %s
+        """, (prescription.patient_id,))
+        patient_name_result = cur.fetchone()
+        if not patient_name_result:
+            raise HTTPException(status_code=404, detail="Patient not found")
+        patient_name = patient_name_result[0]
+
+        # Get doctor name
+        cur.execute("""
+            SELECT u.full_name 
+            FROM doctors d
+            JOIN users u ON d.user_id = u.user_id
+            WHERE d.doctor_id = %s
+        """, (prescription.doctor_id,))
+        doctor_name_result = cur.fetchone()
+        if not doctor_name_result:
+            raise HTTPException(status_code=404, detail="Doctor not found")
+        doctor_name = doctor_name_result[0]
+
+        # Create prescription
+        query = """
+            INSERT INTO prescriptions (appointment_id, patient_id, doctor_id, notes)
+            VALUES (%s, %s, %s, %s)
+            RETURNING prescription_id, prescribed_at
+        """
+        cur.execute(query, (
+            prescription.appointment_id, prescription.patient_id,
+            prescription.doctor_id, prescription.notes
+        ))
+        result = cur.fetchone()
+        
+        # Notify Patient
+        cur.execute("SELECT user_id FROM patients WHERE patient_id = %s", (prescription.patient_id,))
+        pat_user_id = cur.fetchone()[0]
+        create_notification_internal(cur, pat_user_id, "New Prescription", f"You have a new prescription from Dr. {doctor_name}.")
+        
+        conn.commit()
+
+        return {
+            "prescription_id": result[0],
+            "appointment_id": prescription.appointment_id,
+            "patient_id": prescription.patient_id,
+            "patient_name": patient_name,
+            "doctor_id": prescription.doctor_id,
+            "doctor_name": doctor_name,
+            "notes": prescription.notes,
+            "prescribed_at": result[1],
+            "items": []
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/prescriptions/patient/{patient_id}", response_model=List[PrescriptionResponse])
+def get_patient_prescriptions(patient_id: int):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            SELECT 
+                pr.prescription_id,
+                pr.appointment_id,
+                pr.patient_id,
+                pu.full_name as patient_name,
+                pr.doctor_id,
+                du.full_name as doctor_name,
+                pr.notes,
+                pr.prescribed_at
+            FROM prescriptions pr
+            JOIN patients p ON pr.patient_id = p.patient_id
+            JOIN users pu ON p.user_id = pu.user_id
+            JOIN doctors d ON pr.doctor_id = d.doctor_id
+            JOIN users du ON d.user_id = du.user_id
+            WHERE pr.patient_id = %s
+            ORDER BY pr.prescribed_at DESC
+        """
+        cur.execute(query, (patient_id,))
+        prescriptions = cur.fetchall()
+
+        result = []
+        for pres in prescriptions:
+            # Get prescription items
+            cur.execute("""
+                SELECT 
+                    item_id, medication_name, dosage, frequency, duration, instructions
+                FROM prescription_items
+                WHERE prescription_id = %s
+            """, (pres[0],))
+            items = cur.fetchall()
+            
+            result.append({
+                "prescription_id": pres[0],
+                "appointment_id": pres[1],
+                "patient_id": pres[2],
+                "patient_name": pres[3],
+                "doctor_id": pres[4],
+                "doctor_name": pres[5],
+                "notes": pres[6],
+                "prescribed_at": pres[7],
+                "items": [
+                    {
+                        "item_id": i[0],
+                        "medication_name": i[1],
+                        "dosage": i[2],
+                        "frequency": i[3],
+                        "duration": i[4],
+                        "instructions": i[5]
+                    }
+                    for i in items
+                ]
+            })
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.post("/prescription-items", response_model=PrescriptionItemResponse)
+def add_prescription_item(item: PrescriptionItemCreate):
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        query = """
+            INSERT INTO prescription_items (prescription_id, medication_name, dosage, frequency, duration, instructions)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING item_id
+        """
+        cur.execute(query, (
+            item.prescription_id, item.medication_name, item.dosage,
+            item.frequency, item.duration, item.instructions
+        ))
+        item_id = cur.fetchone()[0]
+        conn.commit()
+
+        return {
+            "item_id": item_id,
+            "prescription_id": item.prescription_id,
+            "medication_name": item.medication_name,
+            "dosage": item.dosage,
+            "frequency": item.frequency,
+            "duration": item.duration,
+            "instructions": item.instructions
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+# =========================
+# STATISTICS & DASHBOARD
+# =========================
+@app.get("/stats/dashboard")
+def get_dashboard_stats():
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        stats = {}
+        
+        # Total counts
+        cur.execute("SELECT COUNT(*) FROM users WHERE role = 'patient'")
+        stats['total_patients'] = cur.fetchone()[0]
+        
+        cur.execute("SELECT COUNT(*) FROM users WHERE role = 'doctor'")
+        stats['total_doctors'] = cur.fetchone()[0]
+        
+        cur.execute("SELECT COUNT(*) FROM appointments WHERE status = 'scheduled'")
+        stats['upcoming_appointments'] = cur.fetchone()[0]
+        
+        cur.execute("SELECT COUNT(*) FROM appointment_requests WHERE status = 'pending'")
+        stats['pending_requests'] = cur.fetchone()[0]
+        
+        cur.execute("SELECT COUNT(*) FROM appointments WHERE DATE(scheduled_date) = CURRENT_DATE")
+        stats['today_appointments'] = cur.fetchone()[0]
+        
+        return stats
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+# =========================
+# DEBUG (HF SAFE)
+# =========================
+@app.get("/debug_db")
+def debug_db():
+    db_url = os.environ.get("DATABASE_URL")
+
+    if not db_url:
+        return {"status": "ERROR", "detail": "DATABASE_URL not set"}
+
+    try:
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema='public'
+        """)
+        tables = [t[0] for t in cur.fetchall()]
+        cur.close()
+        conn.close()
+
+        return {"status": "OK", "tables": tables, "total_tables": len(tables)}
+
+    except Exception as e:
+        return {"status": "FAILED", "detail": str(e)}
+
+
+# =========================
+# MRI ANALYSIS ROUTE
+# =========================
+@app.post("/analyze_mri")
+async def analyze_mri_full(
+    patient_id: int,
+    t1: UploadFile = File(...),      # Required
+    t1ce: UploadFile = File(...),    # Required
+    t2: UploadFile = File(...),      # Required
+    flair: UploadFile = File(...)    # Required
+):
+    if ai_model is None:
+        raise HTTPException(status_code=503, detail="AI System Offline")
+
+    conn = get_db()
+    cur = conn.cursor()
+    
+    try:
+        # 1. Verify Patient Exists
+        cur.execute("SELECT full_name FROM users u JOIN patients p ON u.user_id = p.user_id WHERE p.patient_id = %s", (patient_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Patient not found")
+
+        # 2. Read All 4 Files
+        t1_data = await t1.read()
+        t1ce_data = await t1ce.read()
+        t2_data = await t2.read()
+        flair_data = await flair.read()
+        
+        # 3. Preprocess & Predict
+        input_tensor = preprocess_multichannel(t1_data, t1ce_data, t2_data, flair_data)
+        pred_raw = ai_model.predict(input_tensor, verbose=0)
+        
+        # 4. Apply Optimized Thresholds
+        pred_mask = np.zeros_like(pred_raw)
+        pred_mask[:,:,:,0] = (pred_raw[:,:,:,0] > THRESHOLDS[0]).astype(float)
+        pred_mask[:,:,:,1] = (pred_raw[:,:,:,1] > THRESHOLDS[1]).astype(float)
+        pred_mask[:,:,:,2] = (pred_raw[:,:,:,2] > THRESHOLDS[2]).astype(float)
+        
+        # 5. Calculate Metrics (Area & Diameter)
+        core, edema, enhance, total, diameter = calculate_2d_metrics(pred_mask)
+        risk, flags = generate_medical_flags(core, edema, enhance, diameter)
+        
+        # 6. Save to Database
+        query = """
+            INSERT INTO mri_reports 
+            (patient_id, necrotic_core_area, edema_area, enhancing_tumor_area, 
+             total_tumor_area, max_diameter_cm, risk_assessment, clinical_flags)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING report_id, scan_date;
+        """
+        cur.execute(query, (patient_id, core, edema, enhance, total, diameter, risk, json.dumps(flags)))
+        db_res = cur.fetchone()
+        conn.commit()
+        
+        return {
+            "status": "success",
+            "report_id": db_res[0],
+            "scan_date": db_res[1],
+            "patient_id": patient_id,
+            "medical_analysis": {
+                "risk_assessment": risk,
+                "clinical_flags": flags,
+                "recist_diameter_cm": diameter
+            },
+            "segmentation_data_cm2": {
+                "necrotic_core": core,
+                "edema": edema,
+                "enhancing_tumor": enhance,
+                "total_area": total
+            }
+        }
+
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Analysis Failed: {str(e)}")
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/mri-history/{patient_id}")
+def get_mri_history(patient_id: int):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT report_id, scan_date, total_tumor_area, max_diameter_cm, risk_assessment, clinical_flags
+            FROM mri_reports
+            WHERE patient_id = %s
+            ORDER BY scan_date DESC
+        """, (patient_id,))
+        reports = cur.fetchall()
+
+        return [
+            {
+                "report_id": r[0],
+                "scan_date": r[1],
+                "total_area_cm2": r[2],
+                "diameter_cm": r[3],
+                "risk": r[4],
+                "flags": json.loads(r[5]) if r[5] else []
+            }
+            for r in reports
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+# =========================
+# UPDATE MODELS & ENDPOINTS
+# =========================
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    role: Optional[str] = None
+
+class DoctorUpdate(BaseModel):
+    bio: Optional[str] = None
+    office_phone: Optional[str] = None
+    office_address: Optional[str] = None
+    years_experience: Optional[int] = None
+
+class PatientUpdate(BaseModel):
+    date_of_birth: Optional[date] = None
+    gender: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    emergency_contact: Optional[str] = None
+    medical_history: Optional[str] = None
+    insurance_info: Optional[str] = None
+
+class PrescriptionUpdate(BaseModel):
+    notes: Optional[str] = None
+
+class MessageResponse(BaseModel):
+    message: str
+
+@app.put("/users/{user_id}", response_model=MessageResponse)
+def update_user(user_id: int, user: UserUpdate):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        fields = []
+        values = []
+        
+        if user.full_name:
+            fields.append("full_name = %s")
+            values.append(user.full_name)
+        if user.email:
+            fields.append("email = %s")
+            values.append(user.email)
+        if user.password:
+            fields.append("password_hash = %s")
+            values.append(user.password)
+        
+        if not fields:
+            return {"message": "No changes provided"}
+            
+        values.append(user_id)
+        query = f"UPDATE users SET {', '.join(fields)} WHERE user_id = %s"
+        
+        cur.execute(query, tuple(values))
+        conn.commit()
+        
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        return {"message": "User updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.put("/doctors/{doctor_id}", response_model=MessageResponse)
+def update_doctor(doctor_id: int, doctor: DoctorUpdate):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        fields = []
+        values = []
+        
+        if doctor.bio is not None:
+            fields.append("bio = %s")
+            values.append(doctor.bio)
+        if doctor.office_phone is not None:
+            fields.append("office_phone = %s")
+            values.append(doctor.office_phone)
+        if doctor.office_address is not None:
+            fields.append("office_address = %s")
+            values.append(doctor.office_address)
+        if doctor.years_experience is not None:
+            fields.append("years_experience = %s")
+            values.append(doctor.years_experience)
+            
+        if not fields:
+            return {"message": "No changes provided"}
+            
+        values.append(doctor_id)
+        query = f"UPDATE doctors SET {', '.join(fields)} WHERE doctor_id = %s"
+        
+        cur.execute(query, tuple(values))
+        conn.commit()
+        
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Doctor not found")
+            
+        return {"message": "Doctor updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.put("/patients/{patient_id}", response_model=MessageResponse)
+def update_patient(patient_id: int, patient: PatientUpdate):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        fields = []
+        values = []
+        
+        if patient.date_of_birth is not None:
+            fields.append("date_of_birth = %s")
+            values.append(patient.date_of_birth)
+        if patient.gender is not None:
+            fields.append("gender = %s")
+            values.append(patient.gender)
+        if patient.address is not None:
+            fields.append("address = %s")
+            values.append(patient.address)
+        if patient.phone is not None:
+            fields.append("phone = %s")
+            values.append(patient.phone)
+        if patient.emergency_contact is not None:
+            fields.append("emergency_contact = %s")
+            values.append(patient.emergency_contact)
+        if patient.medical_history is not None:
+            fields.append("medical_history = %s")
+            values.append(patient.medical_history)
+        if patient.insurance_info is not None:
+            fields.append("insurance_info = %s")
+            values.append(patient.insurance_info)
+            
+        if not fields:
+            return {"message": "No changes provided"}
+            
+        values.append(patient_id)
+        query = f"UPDATE patients SET {', '.join(fields)} WHERE patient_id = %s"
+        
+        cur.execute(query, tuple(values))
+        conn.commit()
+        
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Patient not found")
+            
+        return {"message": "Patient updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.put("/prescriptions/{prescription_id}", response_model=MessageResponse)
+def update_prescription(prescription_id: int, update: PrescriptionUpdate):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("UPDATE prescriptions SET notes = %s WHERE prescription_id = %s", (update.notes, prescription_id))
+        conn.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Prescription not found")
+        return {"message": "Prescription updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.put("/appointments/{appointment_id}", response_model=MessageResponse)
+def update_appointment(appointment_id: int, update: AppointmentUpdate):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        fields = []
+        values = []
+        
+        if update.status:
+            fields.append("status = %s")
+            values.append(update.status)
+        if update.scheduled_date:
+            fields.append("scheduled_date = %s")
+            values.append(update.scheduled_date)
+        if update.scheduled_time:
+            fields.append("scheduled_time = %s")
+            values.append(update.scheduled_time)
+            
+        if not fields:
+            return {"message": "No changes provided"}
+            
+        values.append(appointment_id)
+        query = f"UPDATE appointments SET {', '.join(fields)} WHERE appointment_id = %s"
+        
+        cur.execute(query, tuple(values))
+        conn.commit()
+        
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Appointment not found")
+            
+        return {"message": "Appointment updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.put("/appointment-requests/{request_id}", response_model=MessageResponse)
+def update_appointment_request(request_id: int, update: AppointmentRequestUpdate):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("UPDATE appointment_requests SET status = %s WHERE request_id = %s", (update.status, request_id))
+        conn.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Request not found")
+        return {"message": "Appointment request updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()

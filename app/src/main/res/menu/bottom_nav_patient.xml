@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/nav_home"
+        android:icon="@drawable/ic_home"
+        android:title="Home" />
+
+    <item
+        android:id="@+id/nav_book_appointment"
+        android:icon="@drawable/ic_prescription"
+        android:title="Book" />
+
+    <item
+        android:id="@+id/nav_my_appointments"
+        android:icon="@drawable/ic_schedule"
+        android:title="My Appts" />
+
+    <item
+        android:id="@+id/nav_profile"
+        android:icon="@drawable/ic_patient_avatar"
+        android:title="Profile" />
+</menu>

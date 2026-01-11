@@ -164,6 +164,18 @@
         app:layout_constraintEnd_toEndOf="parent"
         android:layout_marginTop="32dp"/>
 
+    <ProgressBar
+        android:id="@+id/signupProgressBar"
+        android:layout_width="30dp"
+        android:layout_height="30dp"
+        android:visibility="gone"
+        android:elevation="10dp"
+        android:indeterminateTint="@color/primary"
+        app:layout_constraintBottom_toBottomOf="@+id/signupButton"
+        app:layout_constraintEnd_toEndOf="@+id/signupButton"
+        app:layout_constraintStart_toStartOf="@+id/signupButton"
+        app:layout_constraintTop_toTopOf="@+id/signupButton" />
+
 
     <TextView
         android:id="@+id/loginText"

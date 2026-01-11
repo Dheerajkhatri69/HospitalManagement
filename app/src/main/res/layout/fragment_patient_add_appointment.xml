@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/primary">
+    android:background="@color/white">
 
     <!-- Header -->
     <RelativeLayout
@@ -22,19 +22,9 @@
             android:textSize="20sp"
             android:textStyle="bold"
             android:fontFamily="@font/sofiasans"
-            android:textColor="@color/primary"
+            android:textColor="@color/white"
             android:layout_centerVertical="true" />
-
-        <ImageView
-            android:id="@+id/btn_close"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:layout_alignParentEnd="true"
-            android:layout_centerVertical="true"
-            android:src="@android:drawable/ic_menu_close_clear_cancel"
-            app:tint="@color/primary"
-            android:padding="4dp"
-            android:contentDescription="Close" />
+            
     </RelativeLayout>
 
     <!-- Form Content -->
@@ -58,7 +48,7 @@
                 android:text="Step 1 of 4"
                 android:textSize="14sp"
                 android:fontFamily="@font/sofiasans"
-                android:textColor="@color/secondary"
+                android:textColor="@color/gray"
                 android:layout_marginBottom="16dp" />
 
             <!-- Specialization Selection -->
@@ -78,7 +68,8 @@
                     android:layout_height="wrap_content"
                     android:inputType="none"
                     android:fontFamily="@font/sofiasans"
-                    android:textColor="@color/secondary"
+                    android:textColor="@color/black"
+                    android:textSize="16sp"
                     android:padding="16dp" />
             </com.google.android.material.textfield.TextInputLayout>
 
@@ -97,25 +88,24 @@
                     android:textSize="16sp"
                     android:textStyle="bold"
                     android:fontFamily="@font/sofiasans"
-                    android:textColor="@color/secondary"
-                   android:layout_marginBottom="12dp" />
-
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/doctors_recyclerview"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:nestedScrollingEnabled="false"
-                    android:layout_marginBottom="20dp" />
-
+                    android:textColor="@color/black"
+                    android:layout_marginBottom="8dp" />
+                    
                 <ProgressBar
                     android:id="@+id/doctors_loading"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
                     android:visibility="gone" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/doctors_recyclerview"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp" />
             </LinearLayout>
 
-            <!-- Date Selection -->
+            <!-- Date Selection Section -->
             <LinearLayout
                 android:id="@+id/date_selection_section"
                 android:layout_width="match_parent"
@@ -123,26 +113,14 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Preferred Date"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:fontFamily="@font/sofiasans"
-                    android:textColor="@color/secondary"
-                    android:layout_marginBottom="12dp" />
-
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
                     android:hint="Select Date"
-                    android:layout_marginBottom="20dp"
                     app:boxStrokeColor="@color/secondary"
                     app:hintTextColor="@color/secondary"
-                    app:endIconMode="custom"
-                    app:endIconDrawable="@android:drawable/ic_menu_my_calendar"
-                    app:endIconTint="@color/secondary">
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/date_input"
@@ -150,13 +128,13 @@
                         android:layout_height="wrap_content"
                         android:focusable="false"
                         android:clickable="true"
-                        android:fontFamily="@font/sofiasans"
-                        android:textColor="@color/secondary"
-                        android:padding="16dp" />
+                        android:textColor="@color/black"
+                        android:textSize="16sp"
+                        android:fontFamily="@font/sofiasans" />
                 </com.google.android.material.textfield.TextInputLayout>
             </LinearLayout>
 
-            <!-- Time Selection -->
+            <!-- Time Selection Section -->
             <LinearLayout
                 android:id="@+id/time_selection_section"
                 android:layout_width="match_parent"
@@ -164,26 +142,14 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Preferred Time"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:fontFamily="@font/sofiasans"
-                    android:textColor="@color/secondary"
-                    android:layout_marginBottom="12dp" />
-
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
                     android:hint="Select Time"
-                    android:layout_marginBottom="20dp"
                     app:boxStrokeColor="@color/secondary"
                     app:hintTextColor="@color/secondary"
-                    app:endIconMode="custom"
-                    app:endIconDrawable="@android:drawable/ic_menu_recent_history"
-                    app:endIconTint="@color/secondary">
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/time_input"
@@ -191,74 +157,64 @@
                         android:layout_height="wrap_content"
                         android:focusable="false"
                         android:clickable="true"
-                        android:fontFamily="@font/sofiasans"
-                        android:textColor="@color/secondary"
-                        android:padding="16dp" />
+                        android:textColor="@color/black"
+                        android:textSize="16sp"
+                        android:fontFamily="@font/sofiasans" />
                 </com.google.android.material.textfield.TextInputLayout>
             </LinearLayout>
-
+            
             <!-- Notes Section -->
-            <LinearLayout
+             <LinearLayout
                 android:id="@+id/notes_section"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Additional Notes (Optional)"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:fontFamily="@font/sofiasans"
-                    android:textColor="@color/secondary"
-                    android:layout_marginBottom="12dp" />
-
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="Any specific concerns or requests..."
-                    android:layout_marginBottom="20dp"
+                    android:layout_marginBottom="16dp"
+                    android:hint="Notes (Optional)"
                     app:boxStrokeColor="@color/secondary"
-                    app:hintTextColor="@color/secondary">
+                    app:hintTextColor="@color/secondary"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/notes_input"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:inputType="textMultiLine"
                         android:minLines="3"
-                        android:gravity="top"
-                        android:fontFamily="@font/sofiasans"
-                        android:textColor="@color/secondary"
-                        android:padding="16dp" />
+                        android:textColor="@color/black"
+                        android:textSize="16sp"
+                        android:fontFamily="@font/sofiasans" />
                 </com.google.android.material.textfield.TextInputLayout>
             </LinearLayout>
 
         </LinearLayout>
     </ScrollView>
 
-    <!-- Bottom Buttons -->
+    <!-- Navigation Buttons -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="16dp"
-        android:background="@color/secondary"
+        android:background="@color/white"
         android:elevation="8dp">
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_back"
-            style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="Back"
-            android:textColor="@color/primary"
-            app:strokeColor="@color/primary"
-            android:fontFamily="@font/sofiasans"
             android:layout_marginEnd="8dp"
-            android:visibility="gone" />
+            android:textColor="@color/secondary"
+            app:strokeColor="@color/secondary"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:visibility="invisible" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_next"
@@ -266,10 +222,10 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="Next"
-            android:backgroundTint="@color/primary"
-            android:textColor="@android:color/white"
-            android:fontFamily="@font/sofiasans"
+            android:backgroundTint="@color/secondary"
+            android:textColor="@color/white"
             android:layout_marginStart="8dp" />
+
     </LinearLayout>
 
 </LinearLayout>

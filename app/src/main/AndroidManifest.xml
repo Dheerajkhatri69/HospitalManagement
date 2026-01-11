@@ -13,6 +13,7 @@
         android:label="@string/app_name"
         android:roundIcon="@drawable/logo"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.HospitalManagement">
         <!-- Corrected meta-data tag -->
         <meta-data
@@ -50,8 +51,32 @@
         <activity
             android:name=".AdminActivity"
             android:exported="false"/>
+        <activity
+            android:name=".AdminAppointmentsActivity"
+            android:exported="false"/>
+        <activity
+            android:name=".AdminPatientsActivity"
+            android:exported="false"/>
+        <activity
+            android:name=".AdminEditDoctorActivity"
+            android:exported="false"/>
+        <activity
+            android:name=".AdminAddDoctorActivity"
+            android:exported="false"/>
+        <activity
+            android:name=".AdminEditPatientActivity"
+            android:exported="false"/>
+        <activity
+            android:name=".EditProfileActivity"
+            android:exported="false"/>
+        <activity
+            android:name=".AppointmentDetailActivity"
+            android:exported="false"/>
         <activity 
-            android:name=".WelcomeActivity"
+            android:name=".SettingsActivity"
+            android:exported="false"/>
+        <activity 
+            android:name=".NotificationsActivity"
             android:exported="false"/>
             
     </application>

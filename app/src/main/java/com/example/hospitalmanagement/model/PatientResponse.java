@@ -21,6 +21,9 @@ public class PatientResponse {
     @SerializedName("gender")
     private String gender;
 
+    @SerializedName("address")
+    private String address;
+
     @SerializedName("phone")
     private String phone;
 
@@ -55,6 +58,10 @@ public class PatientResponse {
 
     public String getGender() {
         return gender;
+    }
+
+    public String getAddress() {
+        return address;
     }
 
     public String getPhone() {

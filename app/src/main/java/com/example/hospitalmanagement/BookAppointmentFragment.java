@@ -8,7 +8,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -19,6 +18,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.viewpager2.widget.ViewPager2;
 
 import com.example.hospitalmanagement.adapter.DoctorSelectionAdapter;
 import com.example.hospitalmanagement.api.ApiService;
@@ -44,7 +44,6 @@ import retrofit2.Response;
 public class BookAppointmentFragment extends Fragment implements DoctorSelectionAdapter.OnDoctorSelectedListener {
 
     // UI Components
-    private ImageView btnClose;
     private TextView stepIndicator;
     private AutoCompleteTextView specializationDropdown;
     private LinearLayout doctorSelectionSection, dateSelectionSection, timeSelectionSection, notesSection;
@@ -86,7 +85,8 @@ public class BookAppointmentFragment extends Fragment implements DoctorSelection
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
             @Nullable Bundle savedInstanceState) {
-        return inflater.inflate(R.layout.fragment_book_appointment, container, false);
+        // Use the new layout
+        return inflater.inflate(R.layout.fragment_patient_add_appointment, container, false);
     }
 
     @Override
@@ -99,7 +99,6 @@ public class BookAppointmentFragment extends Fragment implements DoctorSelection
     }
 
     private void initializeViews(View view) {
-        btnClose = view.findViewById(R.id.btn_close);
         stepIndicator = view.findViewById(R.id.step_indicator);
         specializationDropdown = view.findViewById(R.id.specialization_dropdown);
 
@@ -125,7 +124,6 @@ public class BookAppointmentFragment extends Fragment implements DoctorSelection
     }
 
     private void setupListeners() {
-        btnClose.setOnClickListener(v -> dismissFragment());
         btnBack.setOnClickListener(v -> handleBackButton());
         btnNext.setOnClickListener(v -> handleNextButton());
 
@@ -175,14 +173,14 @@ public class BookAppointmentFragment extends Fragment implements DoctorSelection
     }
 
     private void loadDoctorsBySpecialization(int specId) {
-        doctorsLoading.setVisibility(View.VISIBLE);
+        if (doctorsLoading != null) doctorsLoading.setVisibility(View.VISIBLE);
         doctorsRecyclerView.setVisibility(View.GONE);
 
         apiService.getAllDoctors().enqueue(new Callback<List<DoctorResponse>>() {
             @Override
             public void onResponse(Call<List<DoctorResponse>> call,
                     Response<List<DoctorResponse>> response) {
-                doctorsLoading.setVisibility(View.GONE);
+                if (doctorsLoading != null) doctorsLoading.setVisibility(View.GONE);
 
                 if (response.isSuccessful() && response.body() != null) {
                     // Filter doctors by specialization
@@ -208,7 +206,7 @@ public class BookAppointmentFragment extends Fragment implements DoctorSelection
 
             @Override
             public void onFailure(Call<List<DoctorResponse>> call, Throwable t) {
-                doctorsLoading.setVisibility(View.GONE);
+                if (doctorsLoading != null) doctorsLoading.setVisibility(View.GONE);
                 showToast("Failed to load doctors: " + t.getMessage());
             }
         });
@@ -327,7 +325,7 @@ public class BookAppointmentFragment extends Fragment implements DoctorSelection
         switch (currentStep) {
             case 1:
                 // Specialization is always visible
-                btnBack.setVisibility(View.GONE);
+                btnBack.setVisibility(View.INVISIBLE);
                 btnNext.setText("Next");
                 break;
             case 2:
@@ -377,8 +375,8 @@ public class BookAppointmentFragment extends Fragment implements DoctorSelection
                     Response<AppointmentRequestResponse> response) {
                 if (response.isSuccessful()) {
                     showToast("Appointment request submitted successfully!");
-                    dismissFragment();
-                    // Notify parent activity to refresh appointments
+                    resetForm();
+                    navigateToAppointments();
                 } else {
                     showToast("Failed to submit request");
                 }
@@ -391,10 +389,28 @@ public class BookAppointmentFragment extends Fragment implements DoctorSelection
         });
     }
 
-    private void dismissFragment() {
-        requireActivity().getSupportFragmentManager().beginTransaction()
-                .remove(this)
-                .commit();
+    private void resetForm() {
+        currentStep = 1;
+        selectedSpecId = -1;
+        selectedDoctor = null;
+        selectedDate = "";
+        selectedTime = "";
+        
+        if (notesInput != null) notesInput.setText("");
+        if (dateInput != null) dateInput.setText("");
+        if (timeInput != null) timeInput.setText("");
+        if (specializationDropdown != null) specializationDropdown.setText("", false);
+        
+        updateStepUI();
+    }
+
+    private void navigateToAppointments() {
+        if (getActivity() != null) {
+            ViewPager2 viewPager = getActivity().findViewById(R.id.view_pager);
+            if (viewPager != null) {
+                viewPager.setCurrentItem(2); // Navigate to My Appointments
+            }
+        }
     }
 
     private void showToast(String message) {

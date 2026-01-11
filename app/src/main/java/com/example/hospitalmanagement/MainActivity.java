@@ -1,64 +1,69 @@
 package com.example.hospitalmanagement;
 
 import android.os.Bundle;
-
-import androidx.activity.EdgeToEdge;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
-import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
-
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.appcompat.app.AppCompatActivity;
 import androidx.viewpager2.widget.ViewPager2;
 
-import com.example.hospitalmanagement.adapter.AppointmentAdapter;
-import com.example.hospitalmanagement.model.Appointment;
-import java.util.ArrayList;
-import java.util.List;
+import com.example.hospitalmanagement.adapter.DoctorViewPagerAdapter;
+import com.example.hospitalmanagement.utils.DoctorNotificationWorker;
+import com.example.hospitalmanagement.utils.NotificationHelper;
+import com.example.hospitalmanagement.utils.SessionManager;
+import com.google.android.material.bottomnavigation.BottomNavigationView;
 
-public class MainActivity extends BaseActivity implements AppointmentAdapter.OnAppointmentClickListener {
-    private RecyclerView appointmentsRecyclerView;
-    private AppointmentAdapter appointmentAdapter;
-    private List<Appointment> appointmentList = new ArrayList<>();
+import java.util.concurrent.TimeUnit;
 
-    private com.example.hospitalmanagement.utils.SessionManager sessionManager;
+import androidx.work.PeriodicWorkRequest;
+import androidx.work.WorkManager;
+
+public class MainActivity extends BaseActivity {
+
+    private SessionManager sessionManager;
+    private ViewPager2 viewPager;
+    private BottomNavigationView bottomNavigationView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        // Initialize Notification Channels
+        NotificationHelper.createNotificationChannels(this);
+        
+        // Schedule Doctor Notification Worker
+        PeriodicWorkRequest doctorWork = new PeriodicWorkRequest.Builder(DoctorNotificationWorker.class, 15, TimeUnit.MINUTES).build();
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork("DoctorNotifications", androidx.work.ExistingPeriodicWorkPolicy.KEEP, doctorWork);
+
         // Session Check
-        sessionManager = new com.example.hospitalmanagement.utils.SessionManager(this);
+        sessionManager = new SessionManager(this);
         if (!sessionManager.isLoggedIn()) {
             startActivity(new android.content.Intent(this, LoginActivity.class));
             finish();
             return;
         }
-        // EdgeToEdge.enable(this);
-        //
-        // // Handle edge-to-edge insets
-        // ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v,
-        // insets) -> {
-        // Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-        // v.setPadding(systemBars.left, systemBars.top, systemBars.right,
-        // systemBars.bottom);
-        // return insets;
-        // });
 
+        setupTopBar();
+        setupNavigationDrawer();
+        setupViewPagerAndBottomNav();
+    }
+
+    private void setupTopBar() {
         // Setup notification icon click
         ImageView notificationIcon = findViewById(R.id.notification_icon);
         notificationIcon.setOnClickListener(v -> {
-            Toast.makeText(this, "Notifications", Toast.LENGTH_SHORT).show();
-            // Add navigation to notification page here
+            startActivity(new android.content.Intent(this, NotificationsActivity.class));
         });
 
-        // Setup DrawerLayout
+        // Set User Info in Top Bar
+        TextView doctorName = findViewById(R.id.doctor_name);
+        doctorName.setText("Dr. " + sessionManager.getFullName());
+    }
+
+    private void setupNavigationDrawer() {
         androidx.drawerlayout.widget.DrawerLayout drawerLayout = findViewById(R.id.drawer_layout);
         com.google.android.material.navigation.NavigationView navigationView = findViewById(R.id.nav_view);
 
@@ -68,7 +73,6 @@ public class MainActivity extends BaseActivity implements AppointmentAdapter.OnA
             drawerLayout.openDrawer(androidx.core.view.GravityCompat.START);
         });
 
-        // Setup Navigation Item Click Listener
         // Setup Navigation Item Click Listener
         navigationView.setNavigationItemSelectedListener(item -> {
             int id = item.getItemId();
@@ -82,7 +86,6 @@ public class MainActivity extends BaseActivity implements AppointmentAdapter.OnA
                 startActivity(intent);
                 finish();
             } else {
-                // Handle navigation view item clicks here.
                 Toast.makeText(this, "Clicked: " + item.getTitle(), Toast.LENGTH_SHORT).show();
             }
 
@@ -97,120 +100,59 @@ public class MainActivity extends BaseActivity implements AppointmentAdapter.OnA
 
         navName.setText(sessionManager.getFullName());
         navEmail.setText(sessionManager.getEmail());
+    }
 
-        // Set User Info in Top Bar
-        TextView doctorName = findViewById(R.id.doctor_name);
-        doctorName.setText("Dr. " + sessionManager.getFullName());
+    private void setupViewPagerAndBottomNav() {
+        viewPager = findViewById(R.id.view_pager);
+        bottomNavigationView = findViewById(R.id.bottom_navigation);
 
-        // Setup search functionality
-        com.google.android.material.textfield.TextInputEditText searchBox = findViewById(R.id.search_box);
-        searchBox.setOnClickListener(v -> {
-            Toast.makeText(this, "Search", Toast.LENGTH_SHORT).show();
-            // Add search functionality here
+        DoctorViewPagerAdapter adapter = new DoctorViewPagerAdapter(this);
+        viewPager.setAdapter(adapter);
+
+        // Disable swipe if needed, but user requested swipe navigation
+        viewPager.setUserInputEnabled(true);
+
+        viewPager.registerOnPageChangeCallback(new ViewPager2.OnPageChangeCallback() {
+            @Override
+            public void onPageSelected(int position) {
+                super.onPageSelected(position);
+                switch (position) {
+                    case 0:
+                        bottomNavigationView.setSelectedItemId(R.id.nav_home);
+                        break;
+                    case 1:
+                        bottomNavigationView.setSelectedItemId(R.id.nav_appointments);
+                        break;
+                    case 2:
+                        bottomNavigationView.setSelectedItemId(R.id.nav_lab);
+                        break;
+                    case 3:
+                        bottomNavigationView.setSelectedItemId(R.id.nav_profile);
+                        break;
+                }
+            }
         });
 
-        // Setup Quick Action icons
-        setupQuickActions();
-
-        // Setup banner carousel - REMOVED (Replaced with HorizontalScrollView in XML)
-
-        // Setup appointment RecyclerView
-        setupAppointmentsRecyclerView();
-
-        // Setup "Show All" button
-        TextView showAllButton = findViewById(R.id.show_all_button);
-        showAllButton.setOnClickListener(v -> {
-            Toast.makeText(this, "Show All Appointments", Toast.LENGTH_SHORT).show();
-            // Add navigation to appointments page here
+        bottomNavigationView.setOnItemSelectedListener(item -> {
+            int id = item.getItemId();
+            if (id == R.id.nav_home) {
+                viewPager.setCurrentItem(0);
+                return true;
+            } else if (id == R.id.nav_appointments) {
+                viewPager.setCurrentItem(1);
+                return true;
+            } else if (id == R.id.nav_lab) {
+                viewPager.setCurrentItem(2);
+                return true;
+            } else if (id == R.id.nav_profile) {
+                viewPager.setCurrentItem(3);
+                return true;
+            }
+            return false;
         });
     }
 
-    private void setupQuickActions() {
-        // You can add click listeners for each quick action icon
-        View patientRecords = findViewById(R.id.quick_action_patients);
-        View schedule = findViewById(R.id.quick_action_schedule);
-        View prescriptions = findViewById(R.id.quick_action_prescriptions);
-        View labResults = findViewById(R.id.quick_action_lab);
-
-        patientRecords.setOnClickListener(v -> Toast.makeText(this, "Patient Records", Toast.LENGTH_SHORT).show());
-
-        schedule.setOnClickListener(v -> Toast.makeText(this, "Schedule", Toast.LENGTH_SHORT).show());
-
-        prescriptions.setOnClickListener(v -> Toast.makeText(this, "Prescriptions", Toast.LENGTH_SHORT).show());
-
-        labResults.setOnClickListener(v -> Toast.makeText(this, "Lab Results", Toast.LENGTH_SHORT).show());
-    }
-
-    private void setupAppointmentsRecyclerView() {
-        appointmentsRecyclerView = findViewById(R.id.appointments_recyclerview);
-        appointmentsRecyclerView.setLayoutManager(new LinearLayoutManager(this));
-
-        // Load real appointment data from API
-        loadRealAppointments();
-
-        appointmentAdapter = new AppointmentAdapter(appointmentList, this, true, this);
-        appointmentsRecyclerView.setAdapter(appointmentAdapter);
-
-        // Set fixed size for better performance
-        appointmentsRecyclerView.setHasFixedSize(true);
-
-        // Disable scrolling for RecyclerView since we only show 3 items
-        appointmentsRecyclerView.setNestedScrollingEnabled(false);
-    }
-
-    private void loadRealAppointments() {
-        Integer doctorId = sessionManager.getDoctorId();
-        if (doctorId == null) {
-            Toast.makeText(this, "Doctor ID not found", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        com.example.hospitalmanagement.api.ApiService apiService = com.example.hospitalmanagement.api.RetrofitClient
-                .getApiService();
-
-        apiService.getAppointmentsByDoctor(doctorId)
-                .enqueue(new retrofit2.Callback<List<com.example.hospitalmanagement.model.AppointmentResponse>>() {
-                    @Override
-                    public void onResponse(
-                            retrofit2.Call<List<com.example.hospitalmanagement.model.AppointmentResponse>> call,
-                            retrofit2.Response<List<com.example.hospitalmanagement.model.AppointmentResponse>> response) {
-                        if (response.isSuccessful() && response.body() != null) {
-                            appointmentList.clear();
-                            for (com.example.hospitalmanagement.model.AppointmentResponse apt : response.body()) {
-                                // Convert API response to Appointment model
-                                String patientName = apt.getPatientName() != null ? apt.getPatientName() : "Patient";
-                                String time = apt.getScheduledTime() != null ? apt.getScheduledTime() : "N/A";
-                                String status = apt.getStatus() != null ? apt.getStatus() : "Unknown";
-                                String reason = "Appointment"; // No reason field in API
-
-                                appointmentList.add(new Appointment(
-                                        String.valueOf(apt.getAppointmentId()),
-                                        patientName,
-                                        time,
-                                        status,
-                                        reason,
-                                        "", // No room number
-                                        R.drawable.ic_patient_avatar));
-                            }
-                            appointmentAdapter.notifyDataSetChanged();
-                        } else {
-                            Toast.makeText(MainActivity.this, "Failed to load appointments", Toast.LENGTH_SHORT).show();
-                        }
-                    }
-
-                    @Override
-                    public void onFailure(
-                            retrofit2.Call<List<com.example.hospitalmanagement.model.AppointmentResponse>> call,
-                            Throwable t) {
-                        Toast.makeText(MainActivity.this, "Error: " + t.getMessage(), Toast.LENGTH_SHORT).show();
-                    }
-                });
-    }
-
-    @Override
-    public void onAppointmentClick(Appointment appointment) {
-        // Handle appointment click
-        Toast.makeText(this, "Appointment with " + appointment.getPatientName(), Toast.LENGTH_SHORT).show();
-        // You can navigate to appointment details page here
+    public SessionManager getSessionManager() {
+        return sessionManager;
     }
 }
